@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1b5e20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Golf Score">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Golf Score ⛳</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",Tahoma,sans-serif;background:#eef3ee;color:#1c2b1c;padding-bottom:calc(78px + env(safe-area-inset-bottom));font-size:16px}
+header{position:sticky;top:0;z-index:5;background:#1b5e20;color:#fff;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:8px;box-shadow:0 2px 6px #0003}
+header h1{font-size:18px;margin:0;flex:1;white-space:nowrap}
+header small{opacity:.9;font-size:13px;text-align:right}
+.hb{border:0;border-radius:10px;background:#ffffff22;color:#fff;font-size:18px;width:40px;height:36px}
+.hb.on{background:#fff;color:#1b5e20}
+main{padding:12px;max-width:640px;margin:0 auto}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#fff;border-top:1px solid #ccd;z-index:5;padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+nav button{flex:1;border:0;background:none;padding:8px 0 10px;font-size:22px;color:#667}
+nav button span{display:block;font-size:12px;margin-top:2px}
+nav button.on{color:#1b5e20;font-weight:700;background:#e6f2e6}
+.card{background:#fff;border-radius:14px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px #0001}
+.card h2{font-size:16px;margin:0 0 10px;color:#1b5e20}
+input[type=text],input[type=number],textarea{font-size:16px;padding:10px;border:1px solid #bcc;border-radius:10px;width:100%;background:#fafdfa;font-family:inherit}
+.prow{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+.prow b{width:20px;text-align:center;color:#889;flex:none}
+.prow input.hc{width:62px;flex:none;text-align:center;padding:10px 4px}
+.fl{flex:none;width:44px;height:44px;border-radius:10px;border:0;font-weight:800;font-size:16px;color:#fff}
+.fA{background:#2e7d32}.fB{background:#ef6c00}.fC{background:#6a1b9a}
+.ftag{display:inline-block;font-size:11px;font-weight:800;color:#fff;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:2px}
+.btn{border:0;border-radius:10px;padding:11px 14px;font-size:16px;font-weight:600;background:#1b5e20;color:#fff;font-family:inherit}
+.btn.sec{background:#e3ece3;color:#1b5e20}
+.btn.red{background:#fde8e8;color:#c62828}
+.btn.full{width:100%;margin-top:6px}
+.btn:disabled{opacity:.4}
+.x{border:0;background:#fde8e8;color:#c62828;border-radius:10px;width:40px;height:44px;font-size:16px;flex:none}
+.seg{display:flex;gap:6px}
+.seg button{flex:1;border:1px solid #bcc;background:#fff;border-radius:10px;padding:10px 0;font-size:15px;font-weight:600;color:#445;font-family:inherit}
+.seg button.on{background:#1b5e20;color:#fff;border-color:#1b5e20}
+.seg button.on.l{background:#e65100;border-color:#e65100}
+.seg button.on.r{background:#1565c0;border-color:#1565c0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+label.lb{font-size:13px;color:#667;display:block;margin:6px 0 4px}
+.holebar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.holebar .nm{text-align:center}
+.holebar .nm b{font-size:28px}
+.holebar button{width:56px;height:48px;border:0;border-radius:12px;background:#e3ece3;color:#1b5e20;font-size:22px;font-weight:700}
+.chips{display:flex;gap:5px;overflow-x:auto;padding:8px 0 2px}
+.chips button{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid #bcc;background:#fff;font-weight:700;color:#556;position:relative}
+.chips button.done{background:#c8e6c9;border-color:#81c784;color:#1b5e20}
+.chips button.all{background:#81c784;border-color:#43a047}
+.chips button.cur{background:#1b5e20;color:#fff;border-color:#1b5e20}
+.pcard{background:#fff;border-radius:14px;padding:10px 12px;margin-bottom:10px;box-shadow:0 1px 3px #0001;border-left:6px solid #ccc}
+.pcard.ok{border-left-color:#43a047}
+.ptop{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:6px}
+.ptop .n{font-weight:700;font-size:17px}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:13px;font-weight:700;background:#eee;color:#555;margin-left:4px;white-space:nowrap}
+.b-eagle{background:#fff176;color:#6d4c00}.b-birdie{background:#ffcdd2;color:#b71c1c}.b-par{background:#e0e0e0;color:#333}
+.b-bogey{background:#bbdefb;color:#0d47a1}.b-dbl{background:#90caf9;color:#0d47a1}.b-worse{background:#5c6bc0;color:#fff}
+.b-gir{background:#c8e6c9;color:#1b5e20}
+.frow{display:flex;align-items:center;justify-content:space-between;margin:6px 0;gap:8px}
+.frow .t{font-size:14px;color:#556;flex:none;width:96px;line-height:1.2}
+.frow .t small{display:block;font-size:11px;color:#889}
+.step{display:flex;align-items:center;gap:6px}
+.step button{width:50px;height:46px;border:0;border-radius:10px;background:#e3ece3;color:#1b5e20;font-size:24px;font-weight:700}
+.step span{min-width:38px;text-align:center;font-size:26px;font-weight:800}
+.frow .seg{flex:1}
+.frow .seg button{padding:9px 0;font-size:14px}
+.pen button{border:1px solid #bcc;background:#fff;border-radius:10px;padding:7px 0;font-size:13px;font-weight:600;color:#445;line-height:1.2;font-family:inherit}
+.pen button b{display:block;font-size:12px}
+.pen button.on{background:#c62828;color:#fff;border-color:#c62828}
+.pen button.on.sand{background:#a1887f;border-color:#a1887f}
+.formula{font-size:12px;color:#667;text-align:right;margin-top:2px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 5px;text-align:center;border-bottom:1px solid #e3e8e3;white-space:nowrap}
+th{background:#f1f6f1;color:#335;font-size:13px}
+td.l,th.l{text-align:left}
+.scroll{overflow-x:auto}
+.pay{color:#c62828;font-weight:700}
+.tag{font-size:11px;padding:2px 6px;border-radius:8px;font-weight:700;margin-left:3px}
+.tag.last{background:#ffcdd2;color:#b71c1c}.tag.spin{background:#ffe0b2;color:#e65100}
+.wheelwrap{position:relative;width:240px;height:240px;margin:6px auto}
+.wheelwrap canvas{width:240px;height:240px;border-radius:50%;box-shadow:0 3px 10px #0003}
+.pointer{position:absolute;left:50%;top:-6px;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:26px solid #c62828;z-index:2;filter:drop-shadow(0 2px 2px #0005)}
+.spinres{text-align:center;font-size:18px;font-weight:700;min-height:28px;margin:6px 0}
+.muted{color:#778;font-size:13px}
+.big{font-size:22px;font-weight:800;color:#1b5e20}
+.hcp{font-size:18px;font-weight:800;color:#1b5e20}
+.sc-u{color:#c62828;font-weight:700}.sc-o{color:#1565c0}
+td small{display:block;font-size:10px;color:#c62828;font-weight:700}
+.note{background:#fff8e1;border-radius:10px;padding:8px 10px;font-size:13px;color:#6d4c00;margin:8px 0}
+.dlg{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px}
+.dlgbox{background:#fff;border-radius:16px;padding:18px;width:100%;max-width:380px;text-align:center;font-size:17px}
+.dlgbox p{margin:4px 0 14px}
+.dlgbox textarea{height:120px;font-size:12px;margin-bottom:10px}
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#222e;color:#fff;padding:10px 18px;border-radius:20px;z-index:30;font-size:15px;max-width:90%;text-align:center}
+.aw{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #eef2ee}
+.aw:last-child{border-bottom:0}.ai{font-size:26px;width:34px;text-align:center}.at{font-size:13px;color:#667}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-bottom:10px;font-size:12px;color:#445}
+.lg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.drow{display:flex;align-items:center;gap:8px;margin:6px 0}.dn{width:76px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+.dbar{flex:1;display:flex;gap:2px;height:24px}
+.dbar span{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;min-width:6px}
+.dbar span:first-child{border-radius:4px 0 0 4px}.dbar span:last-child{border-radius:0 4px 4px 0}.dbar span:only-child{border-radius:4px}
+tr.tot td{background:#f1f6f1}
+table.sc sup{color:#43a047;font-size:9px}
+textarea#txt{height:170px;font-size:13px}
+.trow{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
+.sw{width:56px;height:32px;border-radius:16px;border:0;background:#ccc;position:relative;flex:none}
+.sw::after{content:'';position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .15s}
+.sw.on{background:#43a047}.sw.on::after{left:27px}
+/* ---- โหมดกลางแดด ---- */
+body.sun{background:#fff;color:#000;font-size:18px}
+body.sun .card,body.sun .pcard{box-shadow:none;border:2px solid #222}
+body.sun .pcard{border-left-width:8px}
+body.sun .pcard.ok{border-color:#000;border-left-color:#1b5e20}
+body.sun .muted,body.sun .frow .t,body.sun label.lb,body.sun .formula{color:#000;font-weight:600}
+body.sun .step button{background:#1b5e20;color:#fff;width:56px;height:52px;font-size:28px}
+body.sun .step span{font-size:32px}
+body.sun .seg button,body.sun .pen button{border:2px solid #000;color:#000;font-weight:800}
+body.sun .seg button.on,body.sun .pen button.on{color:#fff}
+body.sun .ptop .n{font-size:20px}
+body.sun th{background:#ddd;color:#000}
+body.sun td,body.sun th{border-bottom:1px solid #999}
+body.sun input{border:2px solid #000;color:#000}
+</style>
+</head>
+<body>
+<header><h1>⛳ Golf Score</h1><small id="hinfo"></small>
+  <button class="hb" data-act="sun" title="โหมดกลางแดด">🌞</button><button class="hb" data-act="wake" title="กันจอดับ">💡</button></header>
+<main id="app"></main>
+<nav id="tabs">
+  <button data-tab="setup">⚙️<span>ตั้งค่า</span></button>
+  <button data-tab="hole">⛳<span>บันทึกหลุม</span></button>
+  <button data-tab="sum">📊<span>สรุป / เงิน</span></button>
+</nav>
+<script>
+const KEY='golf_offline_v1',FLIGHTS=['A','B','C'];
+const PEN=[['lost','🌳','ป่า/หาย',1],['water','💧','ตกน้ำ',1],['ob','🚫','OB',1],['bunker','🏖️','บังเกอร์',0]];
+const app=document.getElementById('app');
+let spinning=false,wheelRot=0;
+
+function uid(){return Math.random().toString(36).slice(2,9)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function newHole(){return{par:4,parSet:false,si:'',spin:null,s:{}}}
+function newHoles(){return Array.from({length:18},newHole)}
+function defState(){return{rid:uid(),players:[1,2,3,4].map(k=>({id:uid(),name:'ผู้เล่น '+k,flight:'A',hc:''})),
+  holes:18,cr:'',slope:'',amtLast:20,amtSpin:10,moneyBy:'gross',sortBy:'gross',lunch:'',
+  cur:0,tab:'setup',myFlight:'all',sun:false,wake:true,H:newHoles()}}
+function migrate(s){
+  const d=defState();for(const k in d)if(s[k]===undefined)s[k]=d[k];
+  s.players.forEach(p=>{if(!p.flight)p.flight='A';if(p.hc===undefined)p.hc=''});
+  while(s.H.length<18)s.H.push(newHole());
+  s.H.forEach(h=>{if(h.parSet===undefined)h.parSet=Object.keys(h.s||{}).length>0;if(h.si===undefined)h.si='';h.s=h.s||{}});
+  return s;
+}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));return s?migrate(s):null}catch(e){return null}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+let S=load()||defState();
+
+/* ---------- core calc ---------- */
+const P=id=>S.players.find(p=>p.id===id);
+function flightsUsed(){return FLIGHTS.filter(f=>S.players.some(p=>p.flight===f))}
+function visPlayers(){return S.myFlight==='all'?S.players:S.players.filter(p=>p.flight===S.myFlight)}
+function ent(i,pid){const h=S.H[i];return h.s[pid]||(h.s[pid]={on:null,putt:null,tee:null,lost:0,water:0,ob:0,bunker:0})}
+function penOf(e){return(e.lost||0)+(e.water||0)+(e.ob||0)}
+function hasData(e){return!!e&&(e.on!=null||e.putt!=null||!!e.tee||!!(e.lost||e.water||e.ob||e.bunker))}
+function score(i,pid){const e=S.H[i].s[pid];return e&&e.on!=null&&e.putt!=null?e.on+e.putt+penOf(e):null}
+function gir(i,pid){const e=S.H[i].s[pid];return!!(e&&e.on!=null&&e.on+penOf(e)<=S.H[i].par-2)}
+function hasHC(){return S.players.some(p=>+p.hc)}
+function hcOrder(){const a=[];for(let i=0;i<S.holes;i++)a.push(i);return a.sort((x,y)=>(+S.H[x].si||99)-(+S.H[y].si||99)||x-y)}
+function hStrokes(i,pid){
+  const hc=Math.max(0,Math.min(54,Math.round(+P(pid).hc||0)));if(!hc)return 0;
+  const N=S.holes,rank=hcOrder().indexOf(i)+1;return Math.floor(hc/N)+(rank<=hc%N?1:0);
+}
+function net(i,pid){const sc=score(i,pid);return sc==null?null:sc-hStrokes(i,pid)}
+function metric(i,pid){return S.moneyBy==='net'&&hasHC()?net(i,pid):score(i,pid)}
+function holeDone(i){return S.players.length>0&&S.players.every(p=>score(i,p.id)!=null)}
+function visDone(i){const v=visPlayers();return v.length>0&&v.every(p=>score(i,p.id)!=null)}
+function label(sc,par){if(sc==null)return['',''];if(sc===1)return['Hole in One!','b-eagle'];const d=sc-par;
+  return d<=-3?['Albatross','b-eagle']:d===-2?['Eagle','b-eagle']:d===-1?['Birdie','b-birdie']:d===0?['Par','b-par']:d===1?['Bogey','b-bogey']:d===2?['Double','b-dbl']:['+'+d,'b-worse']}
+
+function holeMoney(i){
+  const h=S.H[i],n=S.players.length,res={pay:{},last:[],spin:[],done:false,pool:0};
+  if(!holeDone(i)||n<2)return res;
+  res.done=true;
+  const arr=S.players.map(p=>({id:p.id,sc:metric(i,p.id)})).sort((a,b)=>a.sc-b.sc);
+  const k=Math.min(2,n-1),thr=arr[n-k].sc;
+  if(thr>arr[0].sc)res.last=arr.filter(x=>x.sc>=thr).map(x=>x.id);
+  const pool=arr.filter(x=>!res.last.includes(x.id));res.pool=pool.length;
+  if(h.spin){const set=new Set();h.spin.forEach(r=>{if(r<=pool.length){const sc=pool[r-1].sc;pool.filter(x=>x.sc===sc).forEach(x=>set.add(x.id))}});res.spin=[...set]}
+  res.last.forEach(id=>res.pay[id]=(res.pay[id]||0)+(+S.amtLast||0));
+  res.spin.forEach(id=>res.pay[id]=(res.pay[id]||0)+(+S.amtSpin||0));
+  return res;
+}
+function stats(pid){
+  let gross=0,par=0,putts=0,n=0,g=0,st=0,l=0,r=0,money=0,ags=0,nt=0;
+  for(let i=0;i<S.holes;i++){
+    const sc=score(i,pid),e=S.H[i].s[pid];
+    if(sc!=null){gross+=sc;par+=S.H[i].par;putts+=e.putt;n++;nt+=net(i,pid);if(gir(i,pid))g++;ags+=Math.min(sc,S.H[i].par+5)}
+    if(e&&e.tee==='s')st++;if(e&&e.tee==='l')l++;if(e&&e.tee==='r')r++;
+    money+=holeMoney(i).pay[pid]||0;
+  }
+  let totalPar=0;for(let i=0;i<S.holes;i++)totalPar+=S.H[i].par;
+  let hcp=null,ch=null;
+  if(n){const slope=+S.slope||113,cr=+S.cr?(+S.cr)*par/totalPar:par;
+    let d=(113/slope)*(ags-cr)*(18/n);d=Math.max(-10,Math.min(54,d));hcp=Math.round(d*10)/10;
+    const cr2=+S.cr||totalPar,f=S.holes==9?0.5:1;ch=Math.round(hcp*f*(+S.slope||113)/113+(cr2-totalPar));}
+  return{gross,par,putts,n,g,st,l,r,money,hcp,ch,net:nt};
+}
+
+/* ---------- render ---------- */
+function render(){
+  if(spinning)return;
+  document.body.classList.toggle('sun',!!S.sun);
+  document.querySelector('[data-act=sun]').classList.toggle('on',!!S.sun);
+  document.querySelector('[data-act=wake]').classList.toggle('on',!!S.wake);
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
+  document.getElementById('hinfo').textContent=S.tab==='hole'?`หลุม ${S.cur+1} · Par ${S.H[S.cur].par}`:`${S.players.length} คน · ${S.holes} หลุม`;
+  ({setup:rSetup,hole:rHole,sum:rSum})[S.tab]();
+  if(S.tab==='hole')drawWheel();
+}
+function sw(act,on){return`<button class="sw ${on?'on':''}" data-act="${act}"></button>`}
+function flightSeg(){const fu=flightsUsed();if(fu.length<2)return'';
+  return`<label class="lb">เครื่องนี้จดของ</label><div class="seg"><button data-act="myf" data-v="all" class="${S.myFlight==='all'?'on':''}">ทุกคน</button>${fu.map(f=>`<button data-act="myf" data-v="${f}" class="${S.myFlight===f?'on':''}">ก๊วน ${f}</button>`).join('')}</div>`}
+function syncCard(){
+  return`<div class="card"><h2>🔄 ส่ง / รับข้อมูลระหว่างเครื่อง</h2>
+    <div class="grid2"><button class="btn" data-act="export">📤 ส่งข้อมูล</button><button class="btn sec" data-act="import">📥 รับข้อมูล</button></div>
+    <p class="muted">ส่งผ่าน AirDrop (ไม่ต้องใช้เน็ต), LINE หรือข้อความ ใช้ได้ทั้ง<br>• แจกรายชื่อ/ก๊วนให้อีกเครื่องก่อนออกรอบ<br>• รวมคะแนนของ 2 ก๊วนเข้าเครื่องเดียว (ส่งกี่ครั้งก็ได้ ไม่ทับกัน)<br>• สำรองข้อมูลกันมือถือแบตหมด</p></div>`}
+function courseCard(){
+  return`<div class="card"><h2>📐 ข้อมูลสนาม (ดูได้จาก Garmin Golf)</h2>
+    <div class="grid2">
+      <div><label class="lb">Course Rating</label><input type="number" step="0.1" inputmode="decimal" data-set="cr" value="${esc(S.cr)}" placeholder="เช่น 72.3"></div>
+      <div><label class="lb">Slope</label><input type="number" inputmode="numeric" data-set="slope" value="${esc(S.slope)}" placeholder="เช่น 128"></div>
+    </div>
+    <p class="muted">ค่า Rating / Slope อยู่คู่กับ Tee ที่เลือกตีใน Garmin Golf ไม่รู้ก็เว้นว่างได้ ระบบใช้ Par แทน</p></div>`}
+
+function rSetup(){
+  const ps=S.players.map((p,k)=>`<div class="prow"><b>${k+1}</b><input type="text" data-pname="${p.id}" value="${esc(p.name)}" placeholder="ชื่อ">
+    <button class="fl f${p.flight}" data-act="flight" data-p="${p.id}">${p.flight}</button>
+    <input type="number" inputmode="numeric" class="hc" data-phc="${p.id}" value="${esc(p.hc)}" placeholder="แต้ม">
+    <button class="x" data-act="delp" data-p="${p.id}">✕</button></div>`).join('');
+  app.innerHTML=`
+  <div class="card"><h2>👥 ผู้เล่น (${S.players.length}/10)</h2>
+    <p class="muted" style="margin-top:0">ปุ่มสี = ก๊วน (แตะเพื่อเปลี่ยน A/B/C) · ช่องขวา = แต้มต่อของรอบนี้ (ไม่ต่อเว้นว่าง)</p>${ps}
+    <button class="btn sec full" data-act="addp" ${S.players.length>=10?'disabled':''}>＋ เพิ่มผู้เล่น</button>
+    ${flightSeg()}</div>
+  <div class="card"><h2>⛳ จำนวนหลุม</h2>
+    <div class="seg"><button data-act="holes" data-v="9" class="${S.holes==9?'on':''}">9 หลุม</button><button data-act="holes" data-v="18" class="${S.holes==18?'on':''}">18 หลุม</button></div>
+    <p class="muted">PAR และ HCP ของแต่ละหลุม เลือกในหน้า "บันทึกหลุม" ได้เลย</p></div>
+  <div class="card"><h2>💰 กติกาเงิน</h2>
+    <div class="grid2">
+      <div><label class="lb">2 อันดับท้าย เสีย (฿)</label><input type="number" inputmode="numeric" data-set="amtLast" value="${S.amtLast}"></div>
+      <div><label class="lb">วงล้อ 2 คน เสีย (฿)</label><input type="number" inputmode="numeric" data-set="amtSpin" value="${S.amtSpin}"></div>
+    </div>
+    <label class="lb">จัดอันดับเงินด้วยสกอร์</label>
+    <div class="seg"><button data-act="moneyBy" data-v="gross" class="${S.moneyBy!=='net'?'on':''}">Gross (สกอร์จริง)</button><button data-act="moneyBy" data-v="net" class="${S.moneyBy==='net'?'on':''}">Net (หักแต้มต่อ)</button></div>
+    <p class="muted">• 2 อันดับสุดท้ายของแต่ละหลุมเสียคนละ ${S.amtLast} บาท (เสมอตรงอันดับท้าย เสียทุกคนที่เสมอ)<br>
+    • หมุนวงล้อหลุมละครั้ง สุ่ม 2 อันดับ เฉพาะอันดับที่มีคน ไม่รวม 2 คนสุดท้าย คนที่โดนเสียคนละ ${S.amtSpin} บาท<br>
+    • แยกก๊วน: คิดเงินเมื่อรวมคะแนนครบทุกก๊วนแล้ว</p></div>
+  ${courseCard()}
+  <div class="card"><h2>🌞 การแสดงผล</h2>
+    <div class="trow"><span>โหมดกลางแดด (ตัวใหญ่ ตัดสีชัด)</span>${sw('sun',S.sun)}</div>
+    <div class="trow"><span>กันจอดับระหว่างใช้งาน</span>${sw('wake',S.wake)}</div>
+    <p class="muted">ถ้าจอยังดับ: ตั้งค่า iPhone → จอภาพและความสว่าง → ล็อกอัตโนมัติ → "ไม่ใช้"</p></div>
+  ${syncCard()}
+  <button class="btn full" data-act="go">เริ่มบันทึก ▶</button>
+  <div class="card" style="margin-top:14px"><h2>🗑️ เริ่มใหม่</h2>
+    <button class="btn red full" data-act="resetround">ล้างคะแนนทั้งหมด (เก็บรายชื่อไว้)</button></div>`;
+}
+
+function stepper(pid,f,v){return`<div class="step"><button data-act="dec" data-p="${pid}" data-f="${f}">−</button><span>${v==null?'–':v}</span><button data-act="inc" data-p="${pid}" data-f="${f}">＋</button></div>`}
+
+function rHole(){
+  const i=S.cur,h=S.H[i],hc=hasHC(),vis=visPlayers();
+  let chips='';for(let k=0;k<S.holes;k++)chips+=`<button data-act="jump" data-v="${k}" class="${k===i?'cur':holeDone(k)?'all done':visDone(k)?'done':''}">${k+1}</button>`;
+  const cards=vis.map(p=>{
+    const e=ent(i,p.id),sc=score(i,p.id),[lb,cl]=label(sc,h.par),st=hStrokes(i,p.id),pn=penOf(e);
+    return`<div class="pcard ${sc!=null?'ok':''}"><div class="ptop"><span class="n">${esc(p.name)}${flightsUsed().length>1?`<span class="ftag f${p.flight}">${p.flight}</span>`:''}${st?` <span class="muted">+${st} แต้ม</span>`:''}</span>
+      <span>${sc!=null?`<span class="badge ${cl}">${sc} · ${lb}</span>`:''}${gir(i,p.id)?'<span class="badge b-gir">GIR</span>':''}</span></div>
+      <div class="frow"><span class="t">ตีถึงออน<small>ไม่รวมลูกโทษ</small></span>${stepper(p.id,'on',e.on)}</div>
+      <div class="frow"><span class="t">พัตต์</span>${stepper(p.id,'putt',e.putt)}</div>
+      <div class="frow"><span class="t">Tee-off</span><div class="seg">
+        <button class="l ${e.tee==='l'?'on':''}" data-act="tee" data-p="${p.id}" data-v="l">⬅ ซ้าย</button>
+        <button class="${e.tee==='s'?'on':''}" data-act="tee" data-p="${p.id}" data-v="s">⬆ ตรง</button>
+        <button class="r ${e.tee==='r'?'on':''}" data-act="tee" data-p="${p.id}" data-v="r">ขวา ➡</button></div></div>
+      <div class="grid4 pen">${PEN.map(([k,ic,nm,pt])=>`<button class="${e[k]?'on':''} ${pt?'':'sand'}" data-act="pen" data-p="${p.id}" data-v="${k}">${ic} ${nm}<b>${e[k]?'×'+e[k]+(pt?' (+'+e[k]*pt+')':''):pt?'โทษ +1':'ไม่มีโทษ'}</b></button>`).join('')}</div>
+      ${sc!=null?`<div class="formula">สกอร์ ${sc} = ออน ${e.on} + พัตต์ ${e.putt}${pn?` + โทษ ${pn}`:''}${st?` · Net ${sc-st}`:''}</div>`:''}
+    </div>`}).join('');
+  const mo=holeMoney(i);
+  const arr=S.players.map(p=>({p,sc:score(i,p.id),m:metric(i,p.id)})).sort((a,b)=>(a.m??1e9)-(b.m??1e9));
+  const waiting=S.players.filter(p=>score(i,p.id)==null);
+  const rows=arr.filter(x=>x.sc!=null).map(x=>{const r=arr.filter(y=>y.m!=null&&y.m<x.m).length+1;
+    return`<tr><td>${r}</td><td class="l">${esc(x.p.name)}${mo.last.includes(x.p.id)?'<span class="tag last">ท้าย</span>':''}${mo.spin.includes(x.p.id)?'<span class="tag spin">วงล้อ</span>':''}</td>
+      <td>${x.sc}</td>${hc?`<td>${net(i,x.p.id)}</td>`:''}<td class="pay">${mo.pay[x.p.id]?mo.pay[x.p.id]+' ฿':''}</td></tr>`}).join('');
+  const waitFl=[...new Set(waiting.map(p=>p.flight))];
+  app.innerHTML=`
+  <div class="card"><div class="holebar"><button data-act="prev" ${i===0?'disabled':''}>◀</button>
+    <div class="nm"><div class="muted">หลุมที่</div><b>${i+1}</b> <span class="muted">/ ${S.holes}</span></div>
+    <button data-act="next" ${i>=S.holes-1?'disabled':''}>▶</button></div>
+    <div class="chips">${chips}</div>
+    <label class="lb">PAR ของหลุมนี้</label>
+    <div class="seg">${[3,4,5,6].map(v=>`<button data-act="par" data-v="${v}" class="${h.par===v?'on':''}">Par ${v}</button>`).join('')}</div>
+    ${hc?`<div class="frow" style="margin-top:8px"><span class="t">HCP หลุม<small>Stroke index จาก Garmin</small></span><input type="number" inputmode="numeric" data-hset="si" value="${esc(h.si)}" placeholder="1-18" style="width:100px"></div>`:''}
+    ${flightSeg()}</div>
+  ${cards||'<div class="card muted">ไม่มีผู้เล่นในก๊วนนี้</div>'}
+  <div class="card"><h2>🏆 อันดับหลุมนี้ ${hc?`<span class="muted">(คิดเงินด้วย ${S.moneyBy==='net'?'Net':'Gross'})</span>`:''}</h2>
+    ${rows?`<table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${hc?'<th>Net</th>':''}<th>เสีย</th></tr>${rows}</table>`:'<p class="muted">ยังไม่มีคะแนน</p>'}
+    ${waiting.length&&rows?`<div class="note">รอคะแนน: ${waiting.map(p=>esc(p.name)).join(', ')}${waitFl.some(f=>S.myFlight!=='all'&&f!==S.myFlight)?' (อีกก๊วน ให้กด "รับข้อมูล" ในหน้าตั้งค่า/สรุป)':''}<br>จะคิดเงินเมื่อครบทุกคน</div>`:''}</div>
+  <div class="card"><h2>🎡 วงล้อหลุม ${i+1}</h2>
+    ${!mo.done?`<p class="muted" style="text-align:center">หมุนได้เมื่อมีคะแนนครบทุกคนทุกก๊วน<br>(วงล้อมีเฉพาะอันดับที่มีคน ไม่รวม 2 คนสุดท้าย)</p>`
+      :mo.pool<1?`<p class="muted" style="text-align:center">หลุมนี้ไม่มีคนเหลือให้สุ่ม</p>`
+      :`<div class="wheelwrap"><div class="pointer"></div><canvas id="wheel" width="480" height="480"></canvas></div>
+    <div class="spinres" id="spinres">${h.spin?(h.spin.some(r=>r>mo.pool)?'⚠️ คะแนนมีการแก้ไข ควรหมุนใหม่':'ได้อันดับ '+h.spin.join(' และ ')):'ยังไม่ได้หมุน'}</div>
+    <p class="muted" style="text-align:center">สุ่มจากอันดับ 1–${mo.pool}</p>
+    <button class="btn full" data-act="spin">${h.spin?'🔄 หมุนใหม่':'🎯 หมุนวงล้อ'+(mo.pool>=2?' (สุ่ม 2 อันดับ)':'')}</button>`}</div>
+  ${i<S.holes-1?`<button class="btn full" data-act="next">ไปหลุม ${i+2} ▶</button>`:`<button class="btn full" data-act="tab" data-v="sum">ดูสรุปผล 📊</button>`}`;
+}
+
+const COLORS=['#e53935','#fb8c00','#fdd835','#43a047','#00acc1','#1e88e5','#8e24aa','#d81b60','#6d4c41','#546e7a'];
+function drawWheel(){
+  const c=document.getElementById('wheel');if(!c)return;
+  const x=c.getContext('2d'),N=holeMoney(S.cur).pool,R=240,seg=2*Math.PI/N;
+  for(let k=0;k<N;k++){const a0=-Math.PI/2+k*seg;
+    x.beginPath();x.moveTo(R,R);x.arc(R,R,R-4,a0,a0+seg);x.closePath();x.fillStyle=COLORS[k%COLORS.length];x.fill();
+    x.strokeStyle='#fff';x.lineWidth=4;x.stroke();
+    x.save();x.translate(R,R);x.rotate(a0+seg/2);x.fillStyle=k===2?'#333':'#fff';x.font='bold 54px sans-serif';x.textAlign='center';x.textBaseline='middle';
+    x.translate(R*0.68,0);x.rotate(Math.PI/2);x.fillText(k+1,0,0);x.restore();}
+  x.beginPath();x.arc(R,R,30,0,2*Math.PI);x.fillStyle='#fff';x.fill();
+  c.style.transition='none';c.style.transform=`rotate(${wheelRot}deg)`;
+}
+function rnd(n){const a=new Uint32Array(1);(window.crypto||{getRandomValues:v=>{v[0]=Math.random()*4294967296}}).getRandomValues(a);return a[0]%n}
+function spinTo(n,N){return new Promise(res=>{
+  const c=document.getElementById('wheel'),seg=360/N;
+  const center=(n-1+0.5)*seg+(Math.random()-.5)*seg*0.6;
+  wheelRot+=360*5+((-center-wheelRot)%360+360)%360;
+  c.style.transition='transform 2.8s cubic-bezier(.15,.7,.2,1)';c.style.transform=`rotate(${wheelRot}deg)`;
+  setTimeout(res,2950);})}
+async function doSpin(){
+  const h=S.H[S.cur];if(h.spin&&!(await ask('หลุมนี้หมุนไปแล้ว ต้องการหมุนใหม่?')))return;
+  const N=holeMoney(S.cur).pool;if(!N)return;spinning=true;
+  const out=document.getElementById('spinres');const a=rnd(N)+1;
+  out.textContent='กำลังหมุน...';await spinTo(a,N);
+  if(N>=2){let b;do{b=rnd(N)+1}while(b===a);
+    out.textContent=`ครั้งที่ 1: อันดับ ${a} · กำลังหมุนครั้งที่ 2...`;
+    await new Promise(r=>setTimeout(r,500));await spinTo(b,N);h.spin=[a,b];}
+  else h.spin=[a];
+  save();spinning=false;render();
+}
+
+/* ---------- extended stats ---------- */
+const DIST=[['Eagle+','#b71c1c','#fff'],['Birdie','#e57373','#1c2b1c'],['Par','#cfd8dc','#1c2b1c'],['Bogey','#90caf9','#1c2b1c'],['Double','#42a5f5','#1c2b1c'],['Triple+','#1565c0','#fff']];
+function more(pid){
+  const o={dist:[0,0,0,0,0,0],pt:{3:[0,0,0],4:[0,0,0],5:[0,0,0]},out:[0,0,0],inn:[0,0,0],one:0,three:0,chip:0,gPutt:0,
+    scrO:0,scrN:0,bbO:0,bbN:0,fw:{n:0,hit:0,hitD:0,missD:0},best:null,worst:null,streak:0,lastC:0,wheel:0,
+    lost:0,water:0,ob:0,bunker:0,pen:0,sandN:0,sandO:0,outN:0,inN:0};
+  let cur=0,prevBad=false;
+  for(let i=0;i<S.holes;i++){
+    const hm=holeMoney(i);if(hm.last.includes(pid))o.lastC++;if(hm.spin.includes(pid))o.wheel++;
+    const e=S.H[i].s[pid];
+    if(e){o.lost+=e.lost||0;o.water+=e.water||0;o.ob+=e.ob||0;o.bunker+=e.bunker||0;o.pen+=penOf(e)}
+    const sc=score(i,pid);if(sc==null){cur=0;prevBad=false;continue}
+    const par=S.H[i].par,d=sc-par;
+    o.dist[d<=-2?0:d===-1?1:d===0?2:d===1?3:d===2?4:5]++;
+    const b=o.pt[par>=5?5:par];b[0]++;b[1]+=sc;b[2]+=par;
+    const hf=i<9?o.out:o.inn;hf[0]++;hf[1]+=sc;hf[2]+=par;
+    if(i<9)o.outN+=net(i,pid);else o.inN+=net(i,pid);
+    if(e.putt===1)o.one++;if(e.putt>=3)o.three++;if(e.putt===0)o.chip++;
+    if(gir(i,pid))o.gPutt+=e.putt;else{o.scrN++;if(d<=0)o.scrO++}
+    if(e.bunker){o.sandN++;if(d<=0)o.sandO++}
+    if(prevBad){o.bbN++;if(d<=0)o.bbO++}prevBad=d>=1;
+    if(par>=4&&e.tee){o.fw.n++;if(e.tee==='s'){o.fw.hit++;o.fw.hitD+=d}else o.fw.missD+=d}
+    cur=d<=0?cur+1:0;o.streak=Math.max(o.streak,cur);
+    if(!o.best||d<o.best.d)o.best={i,d,sc};if(!o.worst||d>o.worst.d)o.worst={i,d,sc};
+  }
+  return o;
+}
+function fd(d){if(d==null||isNaN(d))return'-';const r=Math.round(d*10)/10;return r===0?'E':(r>0?'+':'')+r}
+function pc(a,b){return b?Math.round(a/b*100)+'%':'-'}
+function av(a,b,dp=1){return b?(a/b).toFixed(dp):'-'}
+function awards(list){
+  const L=list.filter(x=>x.s.n>0),A=[];
+  function pick(icon,title,val,fmt,better,cond){
+    const c=L.filter(x=>cond?cond(x):true);if(!c.length)return;
+    const vals=c.map(val),bv=better==='min'?Math.min(...vals):Math.max(...vals);
+    A.push({icon,title,names:c.filter((x,k)=>vals[k]===bv).map(x=>x.p.name),v:fmt(bv)});
+  }
+  pick('🏆','แชมป์ Gross',x=>x.s.gross-x.s.par,v=>fd(v),'min');
+  if(hasHC())pick('🥇','แชมป์ Net',x=>x.s.net-x.s.par,v=>fd(v),'min');
+  pick('🎯','ราชาพัตต์',x=>x.s.putts/x.s.n,v=>v.toFixed(2)+' พัตต์/หลุม','min');
+  pick('🟢','เทพ GIR',x=>x.s.g/x.s.n,v=>Math.round(v*100)+'%','max',x=>x.s.g>0);
+  pick('🏌️','ไดรฟ์ตรงสุด',x=>x.m.fw.hit/x.m.fw.n,v=>Math.round(v*100)+'% ลงแฟร์เวย์','max',x=>x.m.fw.n>0&&x.m.fw.hit>0);
+  pick('🐦','นักล่าเบอร์ดี้',x=>x.m.dist[0]+x.m.dist[1],v=>v+' หลุม','max',x=>x.m.dist[0]+x.m.dist[1]>0);
+  pick('🔥','ฟอร์มนิ่งสุด',x=>x.m.streak,v=>'พาร์หรือดีกว่าติดกัน '+v+' หลุม','max',x=>x.m.streak>=2);
+  pick('🛟','สายเซฟพาร์',x=>x.m.scrO/x.m.scrN,v=>'Scrambling '+Math.round(v*100)+'%','max',x=>x.m.scrN>0&&x.m.scrO>0);
+  pick('🌳','นักสำรวจป่า',x=>x.m.lost,v=>'หาลูกไม่เจอ '+v+' ครั้ง','max',x=>x.m.lost>0);
+  pick('💧','นักดำน้ำ',x=>x.m.water,v=>'ตกน้ำ '+v+' ครั้ง','max',x=>x.m.water>0);
+  pick('🚫','ราชา OB',x=>x.m.ob,v=>'OB '+v+' ครั้ง','max',x=>x.m.ob>0);
+  pick('🏖️','ขาประจำบังเกอร์',x=>x.m.bunker,v=>v+' ครั้ง','max',x=>x.m.bunker>0);
+  pick('💸','ATM ประจำก๊วน',x=>x.s.money,v=>v+' บาท','max',x=>x.s.money>0);
+  return A;
+}
+
+function rSum(){
+  const hc=hasHC(),byNet=S.sortBy==='net'&&hc;
+  const list=S.players.map(p=>({p,s:stats(p.id),m:more(p.id)})).sort((a,b)=>{
+    const f=x=>x.s.n?(byNet?x.s.net:x.s.gross)-x.s.par:1e9;return f(a)-f(b)});
+  let pot=0;list.forEach(x=>pot+=x.s.money);
+  const played=list.filter(x=>x.s.n);
+  const nm=x=>`<td class="l"><b>${esc(x.p.name)}</b></td>`;
+  const incomplete=[];for(let i=0;i<S.holes;i++)if(!holeDone(i)&&S.players.some(p=>score(i,p.id)!=null))incomplete.push(i+1);
+  const unspun=[];for(let i=0;i<S.holes;i++)if(holeDone(i)&&!S.H[i].spin&&holeMoney(i).pool>0)unspun.push(i);
+  const top=list.map((x,k)=>{const s=x.s,d=s.gross-s.par,dn=s.net-s.par;return`<tr><td>${k+1}</td><td class="l"><b>${esc(x.p.name)}</b>${flightsUsed().length>1?`<span class="ftag f${x.p.flight}">${x.p.flight}</span>`:''}<br><span class="muted">${s.n}/${S.holes} หลุม${+x.p.hc?' · ต่อ '+x.p.hc:''}</span></td>
+    <td><b>${s.n?s.gross:'-'}</b><br><span class="${d<0?'sc-u':'sc-o'}">${s.n?fd(d):''}</span></td>
+    ${hc?`<td><b>${s.n?s.net:'-'}</b><br><span class="${dn<0?'sc-u':'sc-o'}">${s.n?fd(dn):''}</span></td>`:''}
+    <td>${s.putts}<br><span class="muted">${s.n?av(s.putts,s.n)+'/หลุม':''}</span></td>
+    <td>${s.g}/${s.n}<br><span class="muted">${pc(s.g,s.n)}</span></td>
+    <td class="hcp">${s.hcp==null?'-':s.hcp}</td><td><b>${s.ch==null?'-':s.ch}</b></td></tr>`}).join('');
+
+  const aw=awards(list).map(a=>`<div class="aw"><span class="ai">${a.icon}</span><div><div class="at">${a.title}</div><b>${a.names.map(esc).join(', ')}</b> <span class="muted">· ${a.v}</span></div></div>`).join('');
+  const legend=DIST.map(d=>`<span class="lg"><i style="background:${d[1]}"></i>${d[0]}</span>`).join('');
+  const bars=played.map(x=>`<div class="drow"><div class="dn">${esc(x.p.name)}</div><div class="dbar">${x.m.dist.map((c,k)=>c?
+    `<span data-act="tip" data-v="${esc(x.p.name)} · ${DIST[k][0]}: ${c} หลุม" style="flex:${c};background:${DIST[k][1]};color:${DIST[k][2]}">${c/x.s.n>=0.08?c:''}</span>`:'').join('')}</div></div>`).join('');
+  const distT=played.map(x=>`<tr>${nm(x)}${x.m.dist.map(c=>`<td>${c||'·'}</td>`).join('')}</tr>`).join('');
+
+  const two=S.holes==18;
+  const ptCell=b=>b[0]?`${av(b[1],b[0])}<br><span class="muted">${fd((b[1]-b[2])/b[0])}</span>`:'-';
+  const halfCell=(h,nt)=>h[0]?`${h[1]}<br><span class="muted">${fd(h[1]-h[2])}${hc?` · N ${nt}`:''}</span>`:'-';
+  const hl=o=>o?`H${o.i+1} <span class="muted">(${o.sc}, ${fd(o.d)})</span>`:'-';
+  const parT=played.map(x=>{const m=x.m;return`<tr>${nm(x)}<td>${ptCell(m.pt[3])}</td><td>${ptCell(m.pt[4])}</td><td>${ptCell(m.pt[5])}</td>
+    ${two?`<td>${halfCell(m.out,m.outN)}</td><td>${halfCell(m.inn,m.inN)}</td>`:''}<td>${hl(m.best)}</td><td>${hl(m.worst)}</td></tr>`}).join('');
+  const shortT=played.map(x=>{const s=x.s,m=x.m;return`<tr>${nm(x)}<td>${av(s.putts,s.n,2)}</td><td>${av(m.gPutt,s.g,2)}</td>
+    <td>${m.one}</td><td>${m.three}</td><td>${m.chip}</td><td>${pc(m.scrO,m.scrN)}<br><span class="muted">${m.scrO}/${m.scrN}</span></td><td>${pc(m.bbO,m.bbN)}<br><span class="muted">${m.bbO}/${m.bbN}</span></td></tr>`}).join('');
+  const penT=list.map(x=>{const m=x.m;return`<tr>${nm(x)}<td>${m.lost||'·'}</td><td>${m.water||'·'}</td><td>${m.ob||'·'}</td><td class="pay">${m.pen?'+'+m.pen:'·'}</td><td>${m.bunker||'·'}</td><td>${m.sandN?pc(m.sandO,m.sandN):'-'}<br><span class="muted">${m.sandN?m.sandO+'/'+m.sandN:''}</span></td></tr>`}).join('');
+  const teeT=list.map(x=>{const s=x.s,f=x.m.fw,miss=f.n-f.hit;return`<tr>${nm(x)}<td>${s.l}</td><td><b>${s.st}</b></td><td>${s.r}</td>
+    <td>${pc(f.hit,f.n)}<br><span class="muted">${f.hit}/${f.n}</span></td><td>${f.hit?fd(f.hitD/f.hit):'-'}</td><td>${miss?fd(f.missD/miss):'-'}</td></tr>`}).join('');
+
+  const bill=+S.lunch||0,n=S.players.length,extra=bill>pot&&n?Math.ceil((bill-pot)/n):0,left=pot>bill&&bill?pot-bill:0;
+  const moneyT=list.map(x=>`<tr>${nm(x)}<td>${x.m.lastC}</td><td>${x.m.wheel}</td><td class="pay">${x.s.money} ฿</td>${bill?`<td><b>${x.s.money+extra} ฿</b></td>`:''}</tr>`).join('');
+
+  let card=`<tr><th>หลุม</th><th>Par</th>${hc?'<th>HCP</th>':''}${S.players.map(p=>`<th>${esc(p.name)}</th>`).join('')}<th>🎡</th></tr>`;
+  const tot=(a,b,lab,useNet)=>{let par=0;for(let i=a;i<b;i++)par+=S.H[i].par;
+    return`<tr class="tot"><td><b>${lab}</b></td><td>${par}</td>${hc?'<td></td>':''}${S.players.map(p=>{let t=0,c=0;for(let i=a;i<b;i++){const sc=useNet?net(i,p.id):score(i,p.id);if(sc!=null){t+=sc;c++}}return`<td><b>${c?t:'-'}</b></td>`}).join('')}<td></td></tr>`};
+  for(let i=0;i<S.holes;i++){const mo=holeMoney(i),h=S.H[i];
+    card+=`<tr><td><b>${i+1}</b></td><td>${h.par}</td>${hc?`<td class="muted">${h.si||''}</td>`:''}${S.players.map(p=>{const sc=score(i,p.id),e=h.s[p.id];
+      return`<td class="${sc!=null&&sc<h.par?'sc-u':''}">${sc??'-'}${gir(i,p.id)?'<sup>●</sup>':''}${e&&penOf(e)?'<sup style="color:#c62828">P</sup>':''}${mo.pay[p.id]?`<small>${mo.pay[p.id]}฿</small>`:''}</td>`}).join('')}<td class="muted">${h.spin?h.spin.join(','):''}</td></tr>`;
+    if(two&&i===8)card+=tot(0,9,'OUT');}
+  if(two)card+=tot(9,18,'IN');card+=tot(0,S.holes,'Gross');if(hc)card+=tot(0,S.holes,'Net',true);
+
+  app.innerHTML=`
+  ${incomplete.length||unspun.length?`<div class="card"><h2>⚠️ ยังไม่ครบ</h2>
+    ${incomplete.length?`<div class="note">หลุมที่ยังรอคะแนนบางคน: ${incomplete.join(', ')}<br>ถ้าแยกก๊วน ให้อีกเครื่องกด "📤 ส่งข้อมูล" แล้วเครื่องนี้กด "📥 รับข้อมูล"</div>`:''}
+    ${unspun.length?`<div class="note">หลุมที่ยังไม่ได้หมุนวงล้อ: ${unspun.map(i=>i+1).join(', ')}</div><div class="grid2"><button class="btn" data-act="gospin" data-v="${unspun[0]}">🎡 ไปหมุนหลุม ${unspun[0]+1}</button><button class="btn sec" data-act="spinall">⚡ สุ่มที่เหลือทันที</button></div>`:''}</div>`:''}
+  <div class="card"><h2>📊 สรุปผล</h2>
+    ${hc?`<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${!byNet?'on':''}">เรียงตาม Gross</button><button data-act="sortBy" data-v="net" class="${byNet?'on':''}">เรียงตาม Net</button></div>`:''}
+    <div class="scroll"><table>
+    <tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${hc?'<th>Net</th>':''}<th>พัตต์</th><th>GIR</th><th>HCP</th><th>Course<br>HCP</th></tr>${top}</table></div>
+    <p class="muted">Gross = สกอร์จริง (รวมลูกโทษ) · Net = Gross − แต้มต่อ<br>HCP = Handicap โดยประมาณจากรอบนี้ (WHS: ตัดสกอร์ต่อหลุมสูงสุดที่ Par+5, 113/Slope × (สกอร์ − Rating)${S.holes==9?', แปลงเป็น 18 หลุม':''}${S.cr?'':', ไม่ได้ใส่ Rating จึงใช้ Par'}${S.slope?'':', ไม่ได้ใส่ Slope จึงใช้ 113'})<br>
+    Course HCP = แต้มต่อที่ควรได้ในสนามนี้ ใช้เป็นแต้มต่อรอบหน้าได้</p></div>
+  ${aw?`<div class="card"><h2>🏅 รางวัลประจำรอบ</h2>${aw}</div>`:''}
+  <div class="card"><h2>💰 เงิน & ค่ากับข้าวเที่ยง</h2><div class="big">กองกลาง ${pot} บาท</div>
+    <label class="lb">ค่ากับข้าวเที่ยง (บาท)</label><input type="number" inputmode="numeric" data-set="lunch" value="${esc(S.lunch)}" placeholder="ใส่ยอดบิล">
+    ${bill?`<div class="note">${extra?`กองกลางไม่พอ ขาด ${bill-pot} บาท → ทุกคนจ่ายเพิ่มคนละ <b>${extra} บาท</b>`:left?`กองกลางเหลือ <b>${left} บาท</b> หลังจ่ายค่ากับข้าว`:'กองกลางพอดีค่ากับข้าว 👍'}</div>`:''}
+    <div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>ติดท้าย<br>(ครั้ง)</th><th>โดนวงล้อ<br>(ครั้ง)</th><th>เข้ากอง</th>${bill?'<th>รวมจ่าย<br>ค่าข้าว</th>':''}</tr>${moneyT}</table></div></div>
+  ${bars?`<div class="card"><h2>📈 การกระจายสกอร์</h2><div class="legend">${legend}</div>${bars}
+    <p class="muted">แตะที่แถบเพื่อดูจำนวนหลุม</p>
+    <div class="scroll"><table><tr><th class="l">ผู้เล่น</th>${DIST.map(d=>`<th>${d[0]}</th>`).join('')}</tr>${distT}</table></div></div>`:''}
+  ${parT?`<div class="card"><h2>⛳ สกอร์เฉลี่ยตาม Par${two?' / หน้า-หลัง 9':''}</h2><div class="scroll"><table>
+    <tr><th class="l">ผู้เล่น</th><th>Par 3</th><th>Par 4</th><th>Par 5</th>${two?'<th>OUT</th><th>IN</th>':''}<th>หลุมดีสุด</th><th>หลุมแย่สุด</th></tr>${parT}</table></div>
+    <p class="muted">ตัวเลขบน = สกอร์เฉลี่ย, ล่าง = เทียบ Par ต่อหลุม${hc?' · N = Net':''}</p></div>`:''}
+  <div class="card"><h2>🚫 ลูกโทษ & บังเกอร์</h2><div class="scroll"><table>
+    <tr><th class="l">ผู้เล่น</th><th>🌳 ป่า/หาย</th><th>💧 น้ำ</th><th>🚫 OB</th><th>แต้มโทษ</th><th>🏖️ ทราย</th><th>Sand<br>save</th></tr>${penT}</table></div>
+    <p class="muted">Sand save = หลุมที่ลงบังเกอร์แต่ยังทำพาร์หรือดีกว่า</p></div>
+  ${shortT?`<div class="card"><h2>🎯 พัตต์ & ลูกสั้น</h2><div class="scroll"><table>
+    <tr><th class="l">ผู้เล่น</th><th>พัตต์<br>/หลุม</th><th>พัตต์<br>/GIR</th><th>1 พัตต์</th><th>3 พัตต์+</th><th>ชิปลง</th><th>Scram-<br>bling</th><th>Bounce<br>back</th></tr>${shortT}</table></div>
+    <p class="muted">Scrambling = ไม่ได้ GIR แต่ยังทำพาร์ได้ · Bounce back = หลังเสียโบกี้ หลุมถัดไปทำพาร์ได้ · ชิปลง = จบหลุมโดยไม่ต้องพัตต์</p></div>`:''}
+  <div class="card"><h2>🏌️ Tee-off</h2><div class="scroll"><table>
+    <tr><th class="l">ผู้เล่น</th><th>⬅ ซ้าย</th><th>⬆ ตรง</th><th>ขวา ➡</th><th>Fairway<br>Par 4-5</th><th>สกอร์เมื่อ<br>ตีตรง</th><th>สกอร์เมื่อ<br>ไม่ตรง</th></tr>${teeT}</table></div>
+    <p class="muted">Fairway % นับเฉพาะ Par 4-5 · สกอร์เมื่อตีตรง/ไม่ตรง = เฉลี่ยเทียบ Par ต่อหลุม</p></div>
+  <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll"><table class="sc">${card}</table></div><p class="muted">สีแดง = ต่ำกว่า Par · ● = GIR · P = มีลูกโทษ · ตัวเลขเล็กสีแดง = เงินที่เสีย</p></div>
+  ${courseCard()}
+  ${syncCard()}
+  <div class="card"><h2>📤 คัดลอกสรุป (ส่ง LINE)</h2><textarea id="txt" readonly>${esc(sumText(list,pot,extra,left))}</textarea>
+    <button class="btn full" data-act="copy">คัดลอกข้อความ</button></div>`;
+}
+function sumText(list,pot,extra,left){
+  const hc=hasHC();let tp=0;for(let i=0;i<S.holes;i++)tp+=S.H[i].par;
+  let t=`⛳ สรุปรอบกอล์ฟ ${S.holes} หลุม (Par ${tp})\n`;
+  list.forEach((x,k)=>{const s=x.s,m=x.m;
+    t+=`${k+1}. ${x.p.name}: ${s.gross} (${fd(s.gross-s.par)})${hc?` Net ${s.net} (${fd(s.net-s.par)})`:''} | พัตต์ ${s.putts} | GIR ${s.g}/${s.n} | ตรง ${s.st}/${s.st+s.l+s.r}${m.pen?` | โทษ +${m.pen}`:''} | เสีย ${s.money}฿ | HCP≈${s.hcp??'-'}\n`});
+  if(S.cr||S.slope)t+=`📐 Rating ${S.cr||'-'} / Slope ${S.slope||'-'}\n`;
+  const aw=awards(list);if(aw.length){t+=`\n🏅 รางวัล\n`;aw.forEach(a=>t+=`${a.icon} ${a.title}: ${a.names.join(', ')} (${a.v})\n`)}
+  t+=`\n💰 กองกลางรวม ${pot} บาท`;
+  if(+S.lunch)t+=`\n🍛 ค่ากับข้าว ${S.lunch} บาท → ${extra?`จ่ายเพิ่มคนละ ${extra} บาท`:left?`เหลือ ${left} บาท`:'พอดี'}`;
+  return t;
+}
+
+/* ---------- sync (ส่ง/รับข้อมูล) ---------- */
+function b64e(s){return btoa(unescape(encodeURIComponent(s)))}
+function b64d(s){return decodeURIComponent(escape(atob(s)))}
+function exportCode(){const o={...S};delete o.tab;delete o.cur;delete o.sun;delete o.wake;delete o.sortBy;o.from=S.myFlight;return'GOLF:'+b64e(JSON.stringify(o))}
+async function doExport(){
+  const code=exportCode(),label=S.myFlight==='all'?'ทุกคน':'ก๊วน '+S.myFlight;
+  if(navigator.share){try{await navigator.share({text:code});return}catch(e){if(e&&e.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(code);toast(`คัดลอกข้อมูล (${label}) แล้ว ไปวางใน LINE ได้เลย`)}
+  catch(e){showCode(code)}
+}
+function showCode(code){const d=document.createElement('div');d.className='dlg';
+  d.innerHTML=`<div class="dlgbox"><p>กดค้างที่ข้อความ → เลือกทั้งหมด → คัดลอก</p><textarea readonly>${esc(code)}</textarea><button class="btn full" data-r="1">ปิด</button></div>`;
+  d.addEventListener('click',e=>{if(e.target.closest('[data-r]')){e.stopPropagation();d.remove()}});document.body.appendChild(d)}
+function importDialog(){
+  const d=document.createElement('div');d.className='dlg';
+  d.innerHTML=`<div class="dlgbox"><p>📥 วางข้อมูลที่ได้รับ (ขึ้นต้นด้วย GOLF:)</p><textarea id="imp" placeholder="กดค้างแล้วเลือก วาง"></textarea>
+    <div class="grid2"><button class="btn sec" data-r="0">ยกเลิก</button><button class="btn" data-r="1">รวมข้อมูล</button></div>
+    <button class="btn sec full" data-r="paste">📋 วางจากคลิปบอร์ด</button></div>`;
+  d.addEventListener('click',async e=>{const b=e.target.closest('[data-r]');if(!b)return;e.stopPropagation();
+    const ta=d.querySelector('#imp');
+    if(b.dataset.r==='paste'){try{ta.value=await navigator.clipboard.readText()}catch(er){toast('วางเองโดยกดค้างที่ช่อง')}return}
+    if(b.dataset.r==='0'){d.remove();return}
+    const ok=await doImport(ta.value.trim());if(ok)d.remove();});
+  document.body.appendChild(d);
+}
+function anyData(st){return st.H.some(h=>Object.values(h.s||{}).some(hasData))}
+async function doImport(txt){
+  let I;try{const m=txt.match(/GOLF:([A-Za-z0-9+/=]+)/);I=migrate(JSON.parse(b64d(m[1])))}catch(e){toast('ข้อมูลไม่ถูกต้อง ลองคัดลอกใหม่');return false}
+  if(I.rid!==S.rid){
+    if(anyData(S)&&!(await ask('ข้อมูลนี้เป็นคนละรอบกับในเครื่อง ต้องการแทนที่ข้อมูลในเครื่องทั้งหมด?')))return false;
+    const keep={tab:S.tab,cur:0,sun:S.sun,wake:S.wake,sortBy:S.sortBy,myFlight:S.myFlight};
+    S=Object.assign(I,keep);delete S.from;
+    if(S.myFlight!=='all'&&!flightsUsed().includes(S.myFlight))S.myFlight='all';
+    save();render();toast('รับข้อมูลรอบแล้ว ✓'+(flightsUsed().length>1?' อย่าลืมเลือก "เครื่องนี้จดของ" ก๊วนตัวเอง':''));return true;
+  }
+  // รอบเดียวกัน → รวม
+  let cnt=0;
+  I.players.forEach(ip=>{const lp=P(ip.id);
+    if(!lp){S.players.push(ip);return}
+    if(I.from!=='all'&&ip.flight===I.from){lp.name=ip.name;lp.hc=ip.hc}
+    else{if(lp.hc===''&&ip.hc!=='')lp.hc=ip.hc}});
+  ['cr','slope','lunch'].forEach(k=>{if((S[k]===''||S[k]==null)&&I[k])S[k]=I[k]});
+  I.H.forEach((ih,i)=>{const lh=S.H[i];
+    if(!lh.parSet&&ih.parSet){lh.par=ih.par;lh.parSet=true}
+    if(lh.si===''&&ih.si!=='')lh.si=ih.si;
+    if(!lh.spin&&ih.spin)lh.spin=ih.spin;
+    for(const pid in ih.s){const ie=ih.s[pid],le=lh.s[pid],pl=P(pid);if(!pl||!hasData(ie))continue;
+      const owner=I.from!=='all'&&pl.flight===I.from;
+      if(!hasData(le)||(owner&&JSON.stringify(le)!==JSON.stringify(ie))){lh.s[pid]={...ie};cnt++}}
+  });
+  save();render();toast(`รวมข้อมูลแล้ว ✓ อัปเดต ${cnt} รายการ`);return true;
+}
+
+/* ---------- dialogs ---------- */
+function ask(msg){return new Promise(res=>{
+  const d=document.createElement('div');d.className='dlg';
+  d.innerHTML=`<div class="dlgbox"><p>${esc(msg)}</p><div class="grid2"><button class="btn sec" data-r="0">ยกเลิก</button><button class="btn" data-r="1">ตกลง</button></div></div>`;
+  d.addEventListener('click',e=>{const b=e.target.closest('[data-r]');if(!b)return;e.stopPropagation();d.remove();res(b.dataset.r==='1')});
+  document.body.appendChild(d);})}
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+
+/* ---------- กันจอดับ ---------- */
+let wl=null;
+async function keepAwake(){
+  if(!S.wake){if(wl){try{await wl.release()}catch(e){}wl=null}return}
+  if(wl||!('wakeLock' in navigator)||document.visibilityState!=='visible')return;
+  try{wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>{wl=null})}catch(e){}
+}
+document.addEventListener('visibilitychange',keepAwake);
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  if(spinning||e.target.closest('.dlg'))return;
+  keepAwake();
+  const t=e.target.closest('[data-act],[data-tab]');if(!t)return;
+  if(t.dataset.tab){S.tab=t.dataset.tab;save();render();scrollTo(0,0);return}
+  const a=t.dataset.act,v=t.dataset.v,pid=t.dataset.p,h=S.H[S.cur];
+  switch(a){
+    case 'addp':if(S.players.length<10){const cnt=f=>S.players.filter(p=>p.flight===f).length;
+      S.players.push({id:uid(),name:'ผู้เล่น '+(S.players.length+1),flight:cnt('A')<4?'A':cnt('B')<4?'B':'C',hc:''})}break;
+    case 'delp':{const p=P(pid);ask(`ลบ "${p.name}" ?`).then(ok=>{if(ok){S.players=S.players.filter(q=>q.id!==pid);save();render()}});return}
+    case 'flight':{const p=P(pid);p.flight=FLIGHTS[(FLIGHTS.indexOf(p.flight)+1)%FLIGHTS.length];if(S.myFlight!=='all'&&!flightsUsed().includes(S.myFlight))S.myFlight='all';break}
+    case 'myf':S.myFlight=v;break;
+    case 'holes':S.holes=+v;if(S.cur>=S.holes)S.cur=S.holes-1;break;
+    case 'moneyBy':S.moneyBy=v;break;
+    case 'sortBy':S.sortBy=v;break;
+    case 'sun':S.sun=!S.sun;break;
+    case 'wake':S.wake=!S.wake;keepAwake();toast(S.wake?'💡 กันจอดับ: เปิด':'กันจอดับ: ปิด');break;
+    case 'go':if(!S.players.length){toast('เพิ่มผู้เล่นก่อน');return}S.tab='hole';scrollTo(0,0);break;
+    case 'resetround':ask('ล้างคะแนนทุกหลุม? (กู้คืนไม่ได้)').then(ok=>{if(ok){S.H=newHoles();S.cur=0;S.rid=uid();S.lunch='';save();render();toast('ล้างคะแนนแล้ว')}});return;
+    case 'prev':if(S.cur>0)S.cur--;scrollTo(0,0);break;
+    case 'next':if(S.cur<S.holes-1)S.cur++;scrollTo(0,0);break;
+    case 'jump':S.cur=+v;scrollTo(0,0);break;
+    case 'gospin':S.cur=+v;S.tab='hole';render();setTimeout(()=>{const w=document.getElementById('wheel');if(w)w.scrollIntoView({block:'center'})},50);return;
+    case 'tab':S.tab=v;scrollTo(0,0);break;
+    case 'par':h.par=+v;h.parSet=true;break;
+    case 'inc':case 'dec':{const en=ent(S.cur,pid),f=t.dataset.f;h.parSet=true;
+      if(en[f]==null)en[f]=f==='on'?Math.max(1,h.par-2):2;
+      else if(a==='inc')en[f]=Math.min(20,en[f]+1);
+      else{const min=f==='on'?1:0;en[f]=en[f]<=min?null:en[f]-1}
+      break}
+    case 'tee':{const en=ent(S.cur,pid);en.tee=en.tee===v?null:v;break}
+    case 'pen':{const en=ent(S.cur,pid);en[v]=((en[v]||0)+1)%4;break}
+    case 'spin':doSpin();return;
+    case 'spinall':ask('สุ่มวงล้อทุกหลุมที่ยังไม่ได้หมุนทันที (ไม่มีแอนิเมชัน)?').then(ok=>{if(!ok)return;let c=0;
+      for(let i=0;i<S.holes;i++){if(!holeDone(i)||S.H[i].spin)continue;const N=holeMoney(i).pool;if(!N)continue;
+        const x=rnd(N)+1;let y=x;if(N>=2)while(y===x)y=rnd(N)+1;S.H[i].spin=N>=2?[x,y]:[x];c++}
+      save();render();toast(`สุ่มแล้ว ${c} หลุม ✓ ดูผลได้ในสกอร์การ์ด (คอลัมน์ 🎡)`)});return;
+    case 'tip':toast(v);return;
+    case 'export':doExport();return;
+    case 'import':importDialog();return;
+    case 'copy':{const ta=document.getElementById('txt');ta.select();
+      (navigator.clipboard?navigator.clipboard.writeText(ta.value):Promise.reject()).then(()=>toast('คัดลอกแล้ว ✓'),()=>{try{document.execCommand('copy');toast('คัดลอกแล้ว ✓')}catch(er){toast('กดค้างที่ข้อความเพื่อคัดลอก')}});return}
+  }
+  save();render();
+});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.pname){const p=P(t.dataset.pname);if(p)p.name=t.value;save()}
+  if(t.dataset.phc){const p=P(t.dataset.phc);if(p)p.hc=t.value;save()}
+  if(t.dataset.hset){S.H[S.cur][t.dataset.hset]=t.value;save()}
+  if(t.dataset.set){const k=t.dataset.set;S[k]=t.value===''?'':(['cr','slope','lunch'].includes(k)?t.value:Math.max(0,+t.value));save()}
+});
+document.addEventListener('change',e=>{const d=e.target.dataset;if(d.set||d.phc||d.hset)setTimeout(()=>{const f=document.activeElement;if(!f||!f.matches('input'))render()},0)});
+render();keepAwake();
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
