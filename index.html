@@ -27,6 +27,7 @@ nav button span{display:block;font-size:12px;margin-top:2px}
 nav button.on{color:#1b5e20;font-weight:700;background:#e6f2e6}
 .card{background:#fff;border-radius:14px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px #0001}
 .card h2{font-size:16px;margin:0 0 10px;color:#1b5e20}
+input,textarea{-webkit-user-select:text;user-select:text;touch-action:manipulation}
 input[type=text],input[type=number],textarea{font-size:16px;padding:10px;border:1px solid #bcc;border-radius:10px;width:100%;background:#fafdfa;font-family:inherit}
 .prow{display:flex;gap:6px;margin-bottom:8px;align-items:center}
 .prow b{width:20px;text-align:center;color:#889;flex:none}
@@ -578,7 +579,7 @@ async function doImport(txt){
 }
 
 /* ---------- ประวัติรอบ / Handicap Index / สนามที่บันทึกไว้ ---------- */
-const HKEY='golf_history_v1',CKEY='golf_courses_v1',APPVER='2026.11.01';
+const HKEY='golf_history_v1',CKEY='golf_courses_v1',APPVER='2026.11.14';
 function loadJ(k,d){try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}}
 function saveJ(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 let HIST=loadJ(HKEY,[]),COURSES=loadJ(CKEY,{});
@@ -715,8 +716,8 @@ document.addEventListener('visibilitychange',keepAwake);
 /* ---------- events ---------- */
 document.addEventListener('click',e=>{
   if(spinning||e.target.closest('.dlg'))return;
-  keepAwake();
   const t=e.target.closest('[data-act],[data-tab]');if(!t)return;
+  setTimeout(keepAwake,0);
   if(t.dataset.tab){S.tab=t.dataset.tab;save();render();scrollTo(0,0);return}
   const a=t.dataset.act,v=t.dataset.v,pid=t.dataset.p,h=S.H[S.cur];
   switch(a){
@@ -771,6 +772,11 @@ document.addEventListener('click',e=>{
     for(const k of [8,last])if(k<S.holes&&!S.remind[k]&&visDone(k)&&(k===last||S.holes===18)){S.remind[k]=1;save();
       setTimeout(()=>toast(k===last?'🏁 จบรอบ! กด 📤 ส่งข้อมูล ให้อีกก๊วน/สำรอง แล้วไปดูสรุป':'💾 ครบ 9 หลุม อย่าลืมกด 📤 ส่งข้อมูล (สำรอง/ส่งอีกก๊วน)'),300);break}}
 });
+// iPhone (แอปบนหน้าจอโฮม) บางครั้งแตะช่องกรอกแล้วคีย์บอร์ดไม่ขึ้น → บังคับ focus ตอนยกนิ้ว
+document.addEventListener('touchend',e=>{
+  const el=e.target.closest&&e.target.closest('input:not([type=file]),textarea');
+  if(el&&!el.readOnly&&document.activeElement!==el){el.focus();try{if(el.type==='text'||el.type==='search'){const n=el.value.length;el.setSelectionRange(n,n)}}catch(er){}}
+},{passive:true});
 document.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.pname){const p=P(t.dataset.pname);if(p)p.name=t.value;save()}
