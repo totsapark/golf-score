@@ -140,6 +140,7 @@ body.sun input{border:2px solid #000;color:#000}
   <button data-tab="setup">⚙️<span>ตั้งค่า</span></button>
   <button data-tab="hole">⛳<span>บันทึกหลุม</span></button>
   <button data-tab="sum">📊<span>สรุป / เงิน</span></button>
+  <button data-tab="hist">📚<span>ประวัติ</span></button>
 </nav>
 <script>
 const KEY='golf_offline_v1',FLIGHTS=['A','B','C'];
@@ -152,7 +153,7 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function newHole(){return{par:4,parSet:false,si:'',spin:null,s:{}}}
 function newHoles(){return Array.from({length:18},newHole)}
 function defState(){return{rid:uid(),players:[1,2,3,4].map(k=>({id:uid(),name:'ผู้เล่น '+k,flight:'A',hc:''})),
-  holes:18,cr:'',slope:'',amtLast:20,amtSpin:10,moneyBy:'gross',sortBy:'gross',lunch:'',
+  holes:18,cr:'',slope:'',amtLast:20,amtSpin:10,moneyBy:'gross',sortBy:'gross',lunch:'',course:'',tee:'',date:'',tieRule:'all',remind:{},
   cur:0,tab:'setup',myFlight:'all',sun:false,wake:true,H:newHoles()}}
 function migrate(s){
   const d=defState();for(const k in d)if(s[k]===undefined)s[k]=d[k];
@@ -163,7 +164,7 @@ function migrate(s){
 }
 function load(){try{const s=JSON.parse(localStorage.getItem(KEY));return s?migrate(s):null}catch(e){return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-let S=load()||defState();
+let S=load()||defState();if(!S.date)S.date=today();
 
 /* ---------- core calc ---------- */
 const P=id=>S.players.find(p=>p.id===id);
@@ -195,11 +196,14 @@ function holeMoney(i){
   const k=Math.min(2,n-1),thr=arr[n-k].sc;
   if(thr>arr[0].sc)res.last=arr.filter(x=>x.sc>=thr).map(x=>x.id);
   const pool=arr.filter(x=>!res.last.includes(x.id));res.pool=pool.length;
-  if(h.spin){const set=new Set();h.spin.forEach(r=>{if(r<=pool.length){const sc=pool[r-1].sc;pool.filter(x=>x.sc===sc).forEach(x=>set.add(x.id))}});res.spin=[...set]}
+  if(h.spin){const ord=wheelOrder(i,pool),set=new Set();h.spin.forEach(r=>{if(r<=ord.length){const k=ord[r-1].k;ord.filter(y=>y.k===k).forEach(y=>set.add(y.id))}});res.spin=[...set]}
   res.last.forEach(id=>res.pay[id]=(res.pay[id]||0)+(+S.amtLast||0));
   res.spin.forEach(id=>res.pay[id]=(res.pay[id]||0)+(+S.amtSpin||0));
   return res;
 }
+function hsh(s){let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0}
+function wheelOrder(i,pool){const pt=id=>S.H[i].s[id].putt,t=S.tieRule;
+  return pool.map(x=>({...x,k:t==='putt'?x.sc+'|'+pt(x.id):t==='one'?x.id:String(x.sc),t:t==='putt'?pt(x.id):t==='one'?hsh(S.rid+i+x.id):0})).sort((a,b)=>a.sc-b.sc||a.t-b.t)}
 function stats(pid){
   let gross=0,par=0,putts=0,n=0,g=0,st=0,l=0,r=0,money=0,ags=0,nt=0;
   for(let i=0;i<S.holes;i++){
@@ -224,7 +228,7 @@ function render(){
   document.querySelector('[data-act=wake]').classList.toggle('on',!!S.wake);
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
   document.getElementById('hinfo').textContent=S.tab==='hole'?`หลุม ${S.cur+1} · Par ${S.H[S.cur].par}`:`${S.players.length} คน · ${S.holes} หลุม`;
-  ({setup:rSetup,hole:rHole,sum:rSum})[S.tab]();
+  ({setup:rSetup,hole:rHole,sum:rSum,hist:rHist})[S.tab]();
   if(S.tab==='hole')drawWheel();
 }
 function sw(act,on){return`<button class="sw ${on?'on':''}" data-act="${act}"></button>`}
@@ -232,8 +236,9 @@ function flightSeg(){const fu=flightsUsed();if(fu.length<2)return'';
   return`<label class="lb">เครื่องนี้จดของ</label><div class="seg"><button data-act="myf" data-v="all" class="${S.myFlight==='all'?'on':''}">ทุกคน</button>${fu.map(f=>`<button data-act="myf" data-v="${f}" class="${S.myFlight===f?'on':''}">ก๊วน ${f}</button>`).join('')}</div>`}
 function syncCard(){
   return`<div class="card"><h2>🔄 ส่ง / รับข้อมูลระหว่างเครื่อง</h2>
-    <div class="grid2"><button class="btn" data-act="export">📤 ส่งข้อมูล</button><button class="btn sec" data-act="import">📥 รับข้อมูล</button></div>
-    <p class="muted">ส่งผ่าน AirDrop (ไม่ต้องใช้เน็ต), LINE หรือข้อความ ใช้ได้ทั้ง<br>• แจกรายชื่อ/ก๊วนให้อีกเครื่องก่อนออกรอบ<br>• รวมคะแนนของ 2 ก๊วนเข้าเครื่องเดียว (ส่งกี่ครั้งก็ได้ ไม่ทับกัน)<br>• สำรองข้อมูลกันมือถือแบตหมด</p></div>`}
+    <div class="grid2"><button class="btn" data-act="export">💬 ส่งเป็นข้อความ</button><button class="btn" data-act="exportfile">📁 ส่งเป็นไฟล์</button></div>
+    <button class="btn sec full" data-act="import">📥 รับข้อมูล (วางข้อความ / เลือกไฟล์)</button>
+    <p class="muted">💬 ข้อความ → เหมาะกับ LINE · 📁 ไฟล์ → เหมาะกับ AirDrop (ไม่ต้องใช้เน็ต) เครื่องรับกด "รับข้อมูล" → "เลือกไฟล์" ใช้ได้ทั้ง<br>• แจกรายชื่อ/ก๊วนให้อีกเครื่องก่อนออกรอบ<br>• รวมคะแนนของ 2 ก๊วนเข้าเครื่องเดียว (ส่งกี่ครั้งก็ได้ ไม่ทับกัน)<br>• สำรองข้อมูลกันมือถือแบตหมด</p></div>`}
 function courseCard(){
   return`<div class="card"><h2>📐 ข้อมูลสนาม (ดูได้จาก Garmin Golf)</h2>
     <div class="grid2">
@@ -247,7 +252,14 @@ function rSetup(){
     <button class="fl f${p.flight}" data-act="flight" data-p="${p.id}">${p.flight}</button>
     <input type="number" inputmode="numeric" class="hc" data-phc="${p.id}" value="${esc(p.hc)}" placeholder="แต้ม">
     <button class="x" data-act="delp" data-p="${p.id}">✕</button></div>`).join('');
+  const cn=S.course.trim(),known=cn&&COURSES[cn];
   app.innerHTML=`
+  <div class="card"><h2>📍 รอบนี้</h2>
+    <label class="lb">สนาม</label><input type="text" list="clist" data-set="course" value="${esc(S.course)}" placeholder="ชื่อสนาม">
+    <datalist id="clist">${Object.keys(COURSES).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+    <div class="grid2"><div><label class="lb">วันที่</label><input type="date" data-set="date" value="${esc(S.date||today())}"></div>
+      <div><label class="lb">Tee</label><input type="text" data-set="tee" value="${esc(S.tee)}" placeholder="เช่น Blue"></div></div>
+    ${known?`<button class="btn sec full" data-act="loadcourse">📥 ใช้ Par / HCP หลุม / Rating ที่บันทึกไว้ของสนามนี้</button>`:''}</div>
   <div class="card"><h2>👥 ผู้เล่น (${S.players.length}/10)</h2>
     <p class="muted" style="margin-top:0">ปุ่มสี = ก๊วน (แตะเพื่อเปลี่ยน A/B/C) · ช่องขวา = แต้มต่อของรอบนี้ (ไม่ต่อเว้นว่าง)</p>${ps}
     <button class="btn sec full" data-act="addp" ${S.players.length>=10?'disabled':''}>＋ เพิ่มผู้เล่น</button>
@@ -260,6 +272,9 @@ function rSetup(){
       <div><label class="lb">2 อันดับท้าย เสีย (฿)</label><input type="number" inputmode="numeric" data-set="amtLast" value="${S.amtLast}"></div>
       <div><label class="lb">วงล้อ 2 คน เสีย (฿)</label><input type="number" inputmode="numeric" data-set="amtSpin" value="${S.amtSpin}"></div>
     </div>
+    <label class="lb">วงล้อชี้อันดับที่มีคนเสมอกัน</label>
+    <div class="seg"><button data-act="tieRule" data-v="all" class="${S.tieRule==='all'?'on':''}">เสียทุกคน</button><button data-act="tieRule" data-v="putt" class="${S.tieRule==='putt'?'on':''}">ตัดด้วยพัตต์</button><button data-act="tieRule" data-v="one" class="${S.tieRule==='one'?'on':''}">สุ่ม 1 คน</button></div>
+    <p class="muted" style="margin-top:4px">${S.tieRule==='putt'?'พัตต์น้อยกว่า = อันดับดีกว่า ถ้าพัตต์เท่ากันยังเสียทุกคน':S.tieRule==='one'?'ระบบเรียงคนที่เสมอกันแบบสุ่ม (คงที่ ไม่เปลี่ยนเมื่อเปิดใหม่)':'ทุกคนที่สกอร์เท่ากับอันดับที่วงล้อชี้ เสียทั้งหมด'}</p>
     <label class="lb">จัดอันดับเงินด้วยสกอร์</label>
     <div class="seg"><button data-act="moneyBy" data-v="gross" class="${S.moneyBy!=='net'?'on':''}">Gross (สกอร์จริง)</button><button data-act="moneyBy" data-v="net" class="${S.moneyBy==='net'?'on':''}">Net (หักแต้มต่อ)</button></div>
     <p class="muted">• 2 อันดับสุดท้ายของแต่ละหลุมเสียคนละ ${S.amtLast} บาท (เสมอตรงอันดับท้าย เสียทุกคนที่เสมอ)<br>
@@ -458,7 +473,7 @@ function rSum(){
   ${incomplete.length||unspun.length?`<div class="card"><h2>⚠️ ยังไม่ครบ</h2>
     ${incomplete.length?`<div class="note">หลุมที่ยังรอคะแนนบางคน: ${incomplete.join(', ')}<br>ถ้าแยกก๊วน ให้อีกเครื่องกด "📤 ส่งข้อมูล" แล้วเครื่องนี้กด "📥 รับข้อมูล"</div>`:''}
     ${unspun.length?`<div class="note">หลุมที่ยังไม่ได้หมุนวงล้อ: ${unspun.map(i=>i+1).join(', ')}</div><div class="grid2"><button class="btn" data-act="gospin" data-v="${unspun[0]}">🎡 ไปหมุนหลุม ${unspun[0]+1}</button><button class="btn sec" data-act="spinall">⚡ สุ่มที่เหลือทันที</button></div>`:''}</div>`:''}
-  <div class="card"><h2>📊 สรุปผล</h2>
+  <div class="card"><h2>📊 สรุปผล${S.course?` · ${esc(S.course)}`:''}</h2><p class="muted" style="margin-top:-6px">${thDate(S.date||today())}${S.tee?' · Tee '+esc(S.tee):''}</p>
     ${hc?`<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${!byNet?'on':''}">เรียงตาม Gross</button><button data-act="sortBy" data-v="net" class="${byNet?'on':''}">เรียงตาม Net</button></div>`:''}
     <div class="scroll"><table>
     <tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${hc?'<th>Net</th>':''}<th>พัตต์</th><th>GIR</th><th>HCP</th><th>Course<br>HCP</th></tr>${top}</table></div>
@@ -486,13 +501,17 @@ function rSum(){
     <p class="muted">Fairway % นับเฉพาะ Par 4-5 · สกอร์เมื่อตีตรง/ไม่ตรง = เฉลี่ยเทียบ Par ต่อหลุม</p></div>
   <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll"><table class="sc">${card}</table></div><p class="muted">สีแดง = ต่ำกว่า Par · ● = GIR · P = มีลูกโทษ · ตัวเลขเล็กสีแดง = เงินที่เสีย</p></div>
   ${courseCard()}
+  <div class="card"><h2>🏁 จบรอบ</h2>
+    <button class="btn full" data-act="img">📷 ส่งรูปสกอร์การ์ด</button>
+    <button class="btn full" data-act="saveround">💾 ${HIST.some(r=>r.rid===S.rid)?'อัปเดตรอบนี้ในประวัติ':'บันทึกรอบนี้ลงประวัติ'}</button>
+    <p class="muted">บันทึกแล้วจะใช้คิด Handicap Index ระยะยาว และจำข้อมูลสนามไว้ใช้รอบหน้า (ดูที่แท็บ 📚 ประวัติ)</p></div>
   ${syncCard()}
   <div class="card"><h2>📤 คัดลอกสรุป (ส่ง LINE)</h2><textarea id="txt" readonly>${esc(sumText(list,pot,extra,left))}</textarea>
     <button class="btn full" data-act="copy">คัดลอกข้อความ</button></div>`;
 }
 function sumText(list,pot,extra,left){
   const hc=hasHC();let tp=0;for(let i=0;i<S.holes;i++)tp+=S.H[i].par;
-  let t=`⛳ สรุปรอบกอล์ฟ ${S.holes} หลุม (Par ${tp})\n`;
+  let t=`⛳ ${S.course?S.course+' · ':''}${thDate(S.date||today())}\nสรุปรอบกอล์ฟ ${S.holes} หลุม (Par ${tp})${S.tee?' Tee '+S.tee:''}\n`;
   list.forEach((x,k)=>{const s=x.s,m=x.m;
     t+=`${k+1}. ${x.p.name}: ${s.gross} (${fd(s.gross-s.par)})${hc?` Net ${s.net} (${fd(s.net-s.par)})`:''} | พัตต์ ${s.putts} | GIR ${s.g}/${s.n} | ตรง ${s.st}/${s.st+s.l+s.r}${m.pen?` | โทษ +${m.pen}`:''} | เสีย ${s.money}฿ | HCP≈${s.hcp??'-'}\n`});
   if(S.cr||S.slope)t+=`📐 Rating ${S.cr||'-'} / Slope ${S.slope||'-'}\n`;
@@ -517,14 +536,17 @@ function showCode(code){const d=document.createElement('div');d.className='dlg';
   d.addEventListener('click',e=>{if(e.target.closest('[data-r]')){e.stopPropagation();d.remove()}});document.body.appendChild(d)}
 function importDialog(){
   const d=document.createElement('div');d.className='dlg';
-  d.innerHTML=`<div class="dlgbox"><p>📥 วางข้อมูลที่ได้รับ (ขึ้นต้นด้วย GOLF:)</p><textarea id="imp" placeholder="กดค้างแล้วเลือก วาง"></textarea>
+  d.innerHTML=`<div class="dlgbox"><p>📥 วางข้อความที่ได้รับ (ขึ้นต้นด้วย GOLF:) หรือเลือกไฟล์</p><textarea id="imp" placeholder="กดค้างแล้วเลือก วาง"></textarea>
     <div class="grid2"><button class="btn sec" data-r="0">ยกเลิก</button><button class="btn" data-r="1">รวมข้อมูล</button></div>
-    <button class="btn sec full" data-r="paste">📋 วางจากคลิปบอร์ด</button></div>`;
+    <button class="btn sec full" data-r="paste">📋 วางจากคลิปบอร์ด</button>
+    <label class="btn sec full" style="display:block;box-sizing:border-box">📁 เลือกไฟล์<input type="file" id="impf" accept=".txt,text/plain" style="display:none"></label></div>`;
+  d.querySelector('#impf').addEventListener('change',async ev=>{const f=ev.target.files[0];if(!f)return;const txt=await f.text();
+    const ok=txt.includes('GOLFH:')?importHist(txt):await doImport(txt.trim());if(ok)d.remove()});
   d.addEventListener('click',async e=>{const b=e.target.closest('[data-r]');if(!b)return;e.stopPropagation();
     const ta=d.querySelector('#imp');
     if(b.dataset.r==='paste'){try{ta.value=await navigator.clipboard.readText()}catch(er){toast('วางเองโดยกดค้างที่ช่อง')}return}
     if(b.dataset.r==='0'){d.remove();return}
-    const ok=await doImport(ta.value.trim());if(ok)d.remove();});
+    const v=ta.value.trim(),ok=v.includes('GOLFH:')?importHist(v):await doImport(v);if(ok)d.remove();});
   document.body.appendChild(d);
 }
 function anyData(st){return st.H.some(h=>Object.values(h.s||{}).some(hasData))}
@@ -554,6 +576,124 @@ async function doImport(txt){
   });
   save();render();toast(`รวมข้อมูลแล้ว ✓ อัปเดต ${cnt} รายการ`);return true;
 }
+
+/* ---------- ประวัติรอบ / Handicap Index / สนามที่บันทึกไว้ ---------- */
+const HKEY='golf_history_v1',CKEY='golf_courses_v1',APPVER='2026.11.01';
+function loadJ(k,d){try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}}
+function saveJ(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+let HIST=loadJ(HKEY,[]),COURSES=loadJ(CKEY,{});
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function thDate(s){if(!s)return'';const[y,m,d]=s.split('-');return`${+d} ${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][m-1]} ${(+y+543)%100}`}
+function totalParOf(){let t=0;for(let i=0;i<S.holes;i++)t+=S.H[i].par;return t}
+function roundSummary(){
+  return{rid:S.rid,date:S.date||today(),course:S.course.trim(),tee:S.tee,holes:S.holes,cr:S.cr,slope:S.slope,par:totalParOf(),
+    players:S.players.map(p=>{const s=stats(p.id),m=more(p.id);return{name:p.name.trim(),hc:p.hc,gross:s.gross,net:s.net,par:s.par,n:s.n,putts:s.putts,g:s.g,
+      money:s.money,pen:m.pen,diff:s.n===S.holes?s.hcp:null,sc:Array.from({length:S.holes},(_,i)=>score(i,p.id))}})};
+}
+function saveCourse(){const n=S.course.trim();if(!n)return;
+  COURSES[n]={name:n,holes:S.holes,tee:S.tee,cr:S.cr,slope:S.slope,pars:S.H.slice(0,S.holes).map(h=>h.par),si:S.H.slice(0,S.holes).map(h=>h.si)};saveJ(CKEY,COURSES)}
+function loadCourse(n){const c=COURSES[n];if(!c)return;
+  S.holes=c.holes;S.tee=c.tee||S.tee;S.cr=c.cr;S.slope=c.slope;
+  c.pars.forEach((p,i)=>{S.H[i].par=p;S.H[i].parSet=true;S.H[i].si=c.si[i]||''});save();render();toast(`โหลดข้อมูลสนาม ${n} แล้ว ✓`)}
+function saveRound(){
+  const r=roundSummary();if(!r.players.some(p=>p.n)){toast('ยังไม่มีคะแนน');return}
+  const k=HIST.findIndex(x=>x.rid===r.rid);if(k>=0)HIST[k]=r;else HIST.push(r);
+  HIST.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);saveJ(HKEY,HIST);saveCourse();
+  toast(k>=0?'อัปเดตประวัติรอบนี้แล้ว ✓':'บันทึกรอบนี้ลงประวัติแล้ว ✓');render();
+}
+// WHS: จำนวนรอบ → ใช้กี่รอบที่ดีที่สุด, ปรับค่า
+const WHS=[[3,1,-2],[4,1,-1],[5,1,0],[6,2,-1],[8,2,0],[11,3,0],[14,4,0],[16,5,0],[18,6,0],[19,7,0],[20,8,0]];
+function hIndex(diffs){const d=diffs.slice(-20),n=d.length;if(n<3)return null;
+  const row=WHS.find(r=>n<=r[0]),best=[...d].sort((a,b)=>a-b).slice(0,row[1]);
+  return Math.round((best.reduce((a,b)=>a+b,0)/best.length+row[2])*10)/10}
+function playerHist(){const m={};
+  HIST.forEach(r=>r.players.forEach(p=>{if(!p.n)return;const k=p.name;(m[k]=m[k]||{name:k,rounds:0,diffs:[],gross:[],full:[]});
+    m[k].rounds++;if(p.diff!=null){m[k].diffs.push(p.diff);if(r.holes==18)m[k].full.push(p.gross)}}));
+  return Object.values(m).map(x=>({...x,hi:hIndex(x.diffs),avgDiff:x.diffs.length?Math.round(x.diffs.reduce((a,b)=>a+b,0)/x.diffs.length*10)/10:null,
+    best:x.full.length?Math.min(...x.full):null,avg:x.full.length?Math.round(x.full.reduce((a,b)=>a+b,0)/x.full.length*10)/10:null})).sort((a,b)=>(a.hi??a.avgDiff??99)-(b.hi??b.avgDiff??99));
+}
+function courseHC(hi){const tp=totalParOf(),slope=+S.slope||113,cr=+S.cr||tp,f=S.holes==9?0.5:1;return Math.round(hi*f*slope/113+(cr-tp))}
+function rHist(){
+  const ph=playerHist();
+  const hiT=ph.map(x=>`<tr><td class="l"><b>${esc(x.name)}</b></td><td>${x.rounds}</td><td class="hcp">${x.hi??(x.avgDiff!=null?'~'+x.avgDiff:'-')}</td><td>${x.best??'-'}</td><td>${x.avg??'-'}</td></tr>`).join('');
+  const rounds=[...HIST].reverse().map(r=>{const ps=[...r.players].filter(p=>p.n).sort((a,b)=>(a.gross-a.par)-(b.gross-b.par));
+    return`<div class="card"><div class="ptop"><span><b>${esc(r.course||'ไม่ระบุสนาม')}</b>${r.tee?` <span class="muted">(${esc(r.tee)})</span>`:''}<br><span class="muted">${thDate(r.date)} · ${r.holes} หลุม · Par ${r.par}${r.cr?` · ${r.cr}/${r.slope||113}`:''}</span></span>
+      <button class="x" data-act="delround" data-v="${r.rid}">🗑</button></div>
+      <table><tr><th class="l">ผู้เล่น</th><th>Gross</th><th>Net</th><th>พัตต์</th><th>Diff</th><th>เสีย</th></tr>${ps.map(p=>`<tr><td class="l">${esc(p.name)}</td><td><b>${p.gross}</b> <span class="muted">${fd(p.gross-p.par)}</span></td><td>${p.net}</td><td>${p.putts}</td><td>${p.diff??'-'}</td><td class="pay">${p.money}฿</td></tr>`).join('')}</table></div>`}).join('');
+  const cs=Object.values(COURSES).map(c=>`<div class="trow"><span><b>${esc(c.name)}</b> <span class="muted">${c.holes} หลุม · Par ${c.pars.reduce((a,b)=>a+b,0)}${c.cr?` · ${c.cr}/${c.slope||113}`:''}${c.tee?' · '+esc(c.tee):''}</span></span><button class="x" data-act="delcourse" data-v="${esc(c.name)}">🗑</button></div>`).join('');
+  app.innerHTML=`
+  <div class="card"><h2>🏌️ Handicap Index (จากประวัติ)</h2>
+    ${hiT?`<div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>รอบ</th><th>HI</th><th>ดีสุด<br>(18)</th><th>เฉลี่ย<br>(18)</th></tr>${hiT}</table></div>
+    <p class="muted">คิดแบบ WHS จาก 20 รอบล่าสุด (เช่น มี 20 รอบ ใช้ค่าเฉลี่ย 8 รอบที่ดีที่สุด) ต้องมีอย่างน้อย 3 รอบที่ตีครบ ถ้ายังไม่ถึงจะแสดง ~ค่าเฉลี่ย · จับคู่ผู้เล่นด้วยชื่อ ควรพิมพ์ชื่อให้เหมือนเดิมทุกรอบ</p>
+    <button class="btn full" data-act="applyhi">📥 ใส่แต้มต่อรอบปัจจุบันจาก HI</button>
+    <p class="muted">แต้มต่อ = Course Handicap ของสนามที่ตั้งไว้ (HI × Slope/113 + Rating − Par)</p>`
+    :'<p class="muted">ยังไม่มีประวัติ จบรอบแล้วกด "💾 บันทึกรอบนี้ลงประวัติ" ในหน้าสรุป</p>'}</div>
+  ${rounds?`<h2 style="font-size:16px;color:#1b5e20;margin:16px 4px 8px">📅 รอบที่ผ่านมา (${HIST.length})</h2>${rounds}`:''}
+  <div class="card"><h2>📍 สนามที่บันทึกไว้</h2>${cs||'<p class="muted">ยังไม่มี ระบบจะจำ Par / HCP หลุม / Rating / Slope ให้อัตโนมัติเมื่อบันทึกรอบที่ใส่ชื่อสนาม</p>'}</div>
+  <div class="card"><h2>💾 สำรองประวัติ</h2>
+    <div class="grid2"><button class="btn" data-act="exporthist">📤 ส่งประวัติ</button><button class="btn sec" data-act="import">📥 รับประวัติ</button></div>
+    <p class="muted">ประวัติเก็บในเครื่องนี้เท่านั้น ควรส่งสำรองเข้า LINE ตัวเองเป็นครั้งคราว หรือย้ายไปเครื่องใหม่</p>
+    <p class="muted" style="text-align:center">Golf Score เวอร์ชัน ${APPVER}</p></div>`;
+}
+
+/* ---------- รูปสกอร์การ์ด ---------- */
+async function scoreImage(){
+  const ps=S.players,N=S.holes,two=N==18,hc=hasHC(),W=1080,M=30,RH=50,NW=170,SW=90,CW=(W-2*M-NW-SW)/9;
+  const blocks=two?[[0,9,'OUT'],[9,18,'IN']]:[[0,N,'รวม']];
+  const H=150+blocks.length*((ps.length+2)*RH+30)+(ps.length+1)*RH+90;
+  const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const F=(w,s)=>`${w} ${s}px -apple-system,"Noto Sans Thai",Tahoma,sans-serif`;
+  x.fillStyle='#fff';x.fillRect(0,0,W,H);x.fillStyle='#1b5e20';x.fillRect(0,0,W,120);
+  x.fillStyle='#fff';x.font=F('bold',40);x.textBaseline='middle';x.fillText('⛳ '+(S.course||'สกอร์การ์ด'),M,48);
+  x.font=F('',26);x.fillText(`${thDate(S.date)} · ${N} หลุม · Par ${totalParOf()}${S.tee?' · Tee '+S.tee:''}${S.cr?` · ${S.cr}/${S.slope||113}`:''}`,M,92);
+  let y=150;x.textAlign='center';
+  const cell=(t,cx,cy,o={})=>{x.font=F(o.b?'bold':'',o.s||24);x.fillStyle=o.c||'#1c2b1c';x.fillText(t,cx,cy)};
+  blocks.forEach(([a,b,lab])=>{const cols=b-a,cw=(W-2*M-NW-SW)/cols;
+    x.fillStyle='#e8f1e8';x.fillRect(M,y,W-2*M,RH*2);
+    cell('หลุม',M+NW/2,y+RH/2,{b:1});cell('Par',M+NW/2,y+RH*1.5,{c:'#556'});
+    let tp=0;for(let i=a;i<b;i++){const cx=M+NW+cw*(i-a+.5);cell(String(i+1),cx,y+RH/2,{b:1});cell(String(S.H[i].par),cx,y+RH*1.5,{c:'#556'});tp+=S.H[i].par}
+    cell(lab,W-M-SW/2,y+RH/2,{b:1});cell(String(tp),W-M-SW/2,y+RH*1.5,{c:'#556'});y+=RH*2;
+    ps.forEach((p,k)=>{if(k%2){x.fillStyle='#f7faf7';x.fillRect(M,y,W-2*M,RH)}
+      x.textAlign='left';cell(p.name.slice(0,9),M+10,y+RH/2,{b:1});x.textAlign='center';let t=0,n=0;
+      for(let i=a;i<b;i++){const sc=score(i,p.id),cx=M+NW+cw*(i-a+.5),cy=y+RH/2;if(sc==null){cell('-',cx,cy,{c:'#aaa'});continue}
+        t+=sc;n++;const d=sc-S.H[i].par;
+        if(d<0){x.strokeStyle='#c62828';x.lineWidth=2.5;x.beginPath();x.arc(cx,cy,18,0,7);x.stroke();if(d<-1){x.beginPath();x.arc(cx,cy,23,0,7);x.stroke()}}
+        else if(d>0){x.strokeStyle='#1565c0';x.lineWidth=2;x.strokeRect(cx-17,cy-17,34,34);if(d>1)x.strokeRect(cx-22,cy-22,44,44)}
+        cell(String(sc),cx,cy+1,{b:1,c:d<0?'#c62828':'#1c2b1c'})}
+      cell(n?String(t):'-',W-M-SW/2,y+RH/2,{b:1});y+=RH});
+    y+=30;});
+  const cols=['ผู้เล่น','Gross','+/-',...(hc?['Net']:[]),'พัตต์','GIR','เสีย'],cw2=(W-2*M-200)/(cols.length-1);
+  x.fillStyle='#e8f1e8';x.fillRect(M,y,W-2*M,RH);
+  cols.forEach((t,k)=>{x.textAlign=k?'center':'left';cell(t,k?M+200+cw2*(k-.5):M+10,y+RH/2,{b:1})});y+=RH;
+  const list=ps.map(p=>({p,s:stats(p.id)})).sort((a,b)=>(a.s.gross-a.s.par)-(b.s.gross-b.s.par));
+  list.forEach(({p,s},k)=>{if(k%2){x.fillStyle='#f7faf7';x.fillRect(M,y,W-2*M,RH)}
+    const v=[p.name.slice(0,12),String(s.gross),fd(s.gross-s.par),...(hc?[String(s.net)]:[]),String(s.putts),s.g+'/'+s.n,s.money+'฿'];
+    v.forEach((t,j)=>{x.textAlign=j?'center':'left';cell(t,j?M+200+cw2*(j-.5):M+10,y+RH/2,{b:j<2,c:j===v.length-1?'#c62828':'#1c2b1c'})});y+=RH});
+  x.textAlign='left';cell('○ ต่ำกว่า Par   □ เกิน Par   · Golf Score',M,H-40,{s:20,c:'#889'});
+  const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+  const file=new File([blob],`scorecard-${S.date||today()}.png`,{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});return}catch(e){if(e&&e.name==='AbortError')return}}
+  const url=c.toDataURL('image/png'),d=document.createElement('div');d.className='dlg';
+  d.innerHTML=`<div class="dlgbox"><p>กดค้างที่รูป → บันทึกรูปภาพ</p><img src="${url}" style="width:100%;border-radius:8px"><button class="btn full" data-r="1">ปิด</button></div>`;
+  d.addEventListener('click',e=>{if(e.target.closest('[data-r]')){e.stopPropagation();d.remove()}});document.body.appendChild(d);
+}
+
+/* ---------- ส่งเป็นไฟล์ ---------- */
+async function shareFile(code,name){
+  const file=new File([code],name,{type:'text/plain'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});return true}catch(e){if(e&&e.name==='AbortError')return true}}
+  return false;
+}
+async function doExportFile(){const code=exportCode(),fl=S.myFlight==='all'?'all':S.myFlight;
+  if(!(await shareFile(code,`golf-${S.date||today()}-${fl}.txt`))){toast('เครื่องนี้ส่งไฟล์ไม่ได้ ใช้ "ส่งเป็นข้อความ" แทน');doExport()}}
+async function doExportHist(){const code='GOLFH:'+b64e(JSON.stringify({h:HIST,c:COURSES}));
+  if(await shareFile(code,`golf-history-${today()}.txt`))return;
+  if(navigator.share){try{await navigator.share({text:code});return}catch(e){if(e&&e.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(code);toast('คัดลอกประวัติแล้ว')}catch(e){showCode(code)}}
+function importHist(txt){try{const m=txt.match(/GOLFH:([A-Za-z0-9+/=]+)/),o=JSON.parse(b64d(m[1]));let n=0;
+  o.h.forEach(r=>{if(!HIST.some(x=>x.rid===r.rid)){HIST.push(r);n++}});Object.assign(COURSES,o.c||{});
+  HIST.sort((a,b)=>a.date<b.date?-1:1);saveJ(HKEY,HIST);saveJ(CKEY,COURSES);render();toast(`รับประวัติแล้ว ✓ เพิ่ม ${n} รอบ`);return true}
+  catch(e){toast('ข้อมูลประวัติไม่ถูกต้อง');return false}}
 
 /* ---------- dialogs ---------- */
 function ask(msg){return new Promise(res=>{
@@ -591,7 +731,7 @@ document.addEventListener('click',e=>{
     case 'sun':S.sun=!S.sun;break;
     case 'wake':S.wake=!S.wake;keepAwake();toast(S.wake?'💡 กันจอดับ: เปิด':'กันจอดับ: ปิด');break;
     case 'go':if(!S.players.length){toast('เพิ่มผู้เล่นก่อน');return}S.tab='hole';scrollTo(0,0);break;
-    case 'resetround':ask('ล้างคะแนนทุกหลุม? (กู้คืนไม่ได้)').then(ok=>{if(ok){S.H=newHoles();S.cur=0;S.rid=uid();S.lunch='';save();render();toast('ล้างคะแนนแล้ว')}});return;
+    case 'resetround':ask('ล้างคะแนนทุกหลุม? (กู้คืนไม่ได้) รอบที่บันทึกลงประวัติแล้วจะยังอยู่').then(ok=>{if(ok){S.H=newHoles();S.cur=0;S.rid=uid();S.lunch='';S.remind={};S.date=today();save();render();toast('ล้างคะแนนแล้ว')}});return;
     case 'prev':if(S.cur>0)S.cur--;scrollTo(0,0);break;
     case 'next':if(S.cur<S.holes-1)S.cur++;scrollTo(0,0);break;
     case 'jump':S.cur=+v;scrollTo(0,0);break;
@@ -606,6 +746,16 @@ document.addEventListener('click',e=>{
     case 'tee':{const en=ent(S.cur,pid);en.tee=en.tee===v?null:v;break}
     case 'pen':{const en=ent(S.cur,pid);en[v]=((en[v]||0)+1)%4;break}
     case 'spin':doSpin();return;
+    case 'tieRule':S.tieRule=v;break;
+    case 'loadcourse':loadCourse(S.course.trim());return;
+    case 'exportfile':doExportFile();return;
+    case 'exporthist':doExportHist();return;
+    case 'img':scoreImage();return;
+    case 'saveround':saveRound();return;
+    case 'delround':ask('ลบรอบนี้ออกจากประวัติ?').then(ok=>{if(ok){HIST=HIST.filter(r=>r.rid!==v);saveJ(HKEY,HIST);render()}});return;
+    case 'delcourse':ask(`ลบสนาม "${v}"?`).then(ok=>{if(ok){delete COURSES[v];saveJ(CKEY,COURSES);render()}});return;
+    case 'applyhi':{const ph=playerHist();let n=0;S.players.forEach(p=>{const x=ph.find(y=>y.name===p.name.trim());const hi=x&&(x.hi??x.avgDiff);
+      if(hi!=null){p.hc=String(Math.max(0,courseHC(hi)));n++}});save();toast(n?`ใส่แต้มต่อให้ ${n} คนแล้ว ✓ ดูในหน้าตั้งค่า`:'ไม่พบชื่อที่ตรงกับประวัติ');return}
     case 'spinall':ask('สุ่มวงล้อทุกหลุมที่ยังไม่ได้หมุนทันที (ไม่มีแอนิเมชัน)?').then(ok=>{if(!ok)return;let c=0;
       for(let i=0;i<S.holes;i++){if(!holeDone(i)||S.H[i].spin)continue;const N=holeMoney(i).pool;if(!N)continue;
         const x=rnd(N)+1;let y=x;if(N>=2)while(y===x)y=rnd(N)+1;S.H[i].spin=N>=2?[x,y]:[x];c++}
@@ -617,13 +767,16 @@ document.addEventListener('click',e=>{
       (navigator.clipboard?navigator.clipboard.writeText(ta.value):Promise.reject()).then(()=>toast('คัดลอกแล้ว ✓'),()=>{try{document.execCommand('copy');toast('คัดลอกแล้ว ✓')}catch(er){toast('กดค้างที่ข้อความเพื่อคัดลอก')}});return}
   }
   save();render();
+  if(['inc','dec','pen'].includes(a)){const last=S.holes-1;
+    for(const k of [8,last])if(k<S.holes&&!S.remind[k]&&visDone(k)&&(k===last||S.holes===18)){S.remind[k]=1;save();
+      setTimeout(()=>toast(k===last?'🏁 จบรอบ! กด 📤 ส่งข้อมูล ให้อีกก๊วน/สำรอง แล้วไปดูสรุป':'💾 ครบ 9 หลุม อย่าลืมกด 📤 ส่งข้อมูล (สำรอง/ส่งอีกก๊วน)'),300);break}}
 });
 document.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.pname){const p=P(t.dataset.pname);if(p)p.name=t.value;save()}
   if(t.dataset.phc){const p=P(t.dataset.phc);if(p)p.hc=t.value;save()}
   if(t.dataset.hset){S.H[S.cur][t.dataset.hset]=t.value;save()}
-  if(t.dataset.set){const k=t.dataset.set;S[k]=t.value===''?'':(['cr','slope','lunch'].includes(k)?t.value:Math.max(0,+t.value));save()}
+  if(t.dataset.set){const k=t.dataset.set;S[k]=t.value===''?'':(['cr','slope','lunch','course','tee','date'].includes(k)?t.value:Math.max(0,+t.value));save()}
 });
 document.addEventListener('change',e=>{const d=e.target.dataset;if(d.set||d.phc||d.hset)setTimeout(()=>{const f=document.activeElement;if(!f||!f.matches('input'))render()},0)});
 render();keepAwake();
