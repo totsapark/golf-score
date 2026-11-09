@@ -14,8 +14,9 @@ const STY = {
 const ORDER = ['rough', 'fairway', 'tee', 'water', 'bunker', 'green'];
 // ไม้กอล์ฟ: กลุ่มหลัก (กดครั้งเดียว) + ระบุเบอร์ได้ถ้าต้องการ
 export const CLUB_MAIN = [['D', 'Driver'], ['FW', 'แฟร์เวย์วู้ด'], ['HY', 'ไฮบริด'], ['Iron', 'เหล็ก'], ['Wedge', 'เวดจ์'], ['Putter', 'พัตเตอร์']];
-export const CLUB_SUB = { FW: ['3W', '5W', '7W'], HY: ['3H', '4H', '5H'], Iron: ['4i', '5i', '6i', '7i', '8i', '9i'], Wedge: ['PW', 'GW', 'SW', 'LW'] };
-export const CLUB_ORDER = ['D', 'FW', '3W', '5W', '7W', 'HY', '3H', '4H', '5H', 'Iron', '4i', '5i', '6i', '7i', '8i', '9i', 'Wedge', 'PW', 'GW', 'SW', 'LW', 'Putter'];
+export const CLUB_SUB = { FW: ['3W', '4W', '5W', '7W', '9W'], HY: ['2H', '3H', '4H', '5H', '6H'], Iron: ['2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i'],
+  Wedge: ['PW', 'AW', 'GW', 'SW', 'LW', '48°', '50°', '52°', '54°', '56°', '58°', '60°'] };
+export const CLUB_ORDER = ['D', ...['FW', 'HY', 'Iron', 'Wedge'].flatMap(k => [k, ...CLUB_SUB[k]]), 'Putter'];
 export function clubCat(c) { if (c === 'D' || c === 'Putter' || CLUB_MAIN.some(m => m[0] === c)) return c; for (const k in CLUB_SUB) if (CLUB_SUB[k].includes(c)) return k; return c; }
 // หมุดผู้เล่นบนแผนที่ (สีประจำตัว + ชื่อ + หลุม)
 export function personIcon(name, color, hole, stale) {

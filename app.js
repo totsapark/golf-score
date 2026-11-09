@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon } from './map.js';
 
-const APPVER = '2.1.0';
+const APPVER = '2.2.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -36,12 +36,57 @@ function dlg(html, bind) { const d = document.createElement('div'); d.className 
 function ask(msg) { return new Promise(res => { dlg(`<p>${esc(msg)}</p><div class="grid2"><button class="btn sec" data-r="0">ยกเลิก</button><button class="btn" data-r="1">ตกลง</button></div>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; d.remove(); res(b.dataset.r === '1'); })); }); }
 function info(title, html) { dlg(`<h3 style="margin:0 0 10px;color:#1b5e20">${title}</h3><div style="text-align:left;font-size:15px;line-height:1.6">${html}</div><button class="btn full" data-r>ปิด</button>`, d => d.addEventListener('click', e => { if (e.target.closest('[data-r]')) d.remove(); })); }
 function choose(title, opts) { return new Promise(res => { dlg(`<p><b>${title}</b></p>${opts.map(([v, t]) => `<button class="btn sec full" data-v="${v}">${t}</button>`).join('')}<button class="btn red full" data-v="">ยกเลิก</button>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; d.remove(); res(b.dataset.v || null); })); }); }
-function chooseClub(title = 'ตีด้วยไม้อะไร?') { return new Promise(res => { dlg(`<p><b>${title}</b></p>
-  <div class="cmain">${CLUB_MAIN.map(([c, t]) => `<button data-v="${c}"><b>${c}</b><small>${t}</small></button>`).join('')}</div>
-  <p class="muted" style="margin:12px 0 4px">ระบุเบอร์ (ไม่บังคับ)</p>
-  ${Object.entries(CLUB_SUB).map(([k, a]) => `<div class="csub"><span>${k}</span>${a.map(c => `<button data-v="${c}">${c}</button>`).join('')}</div>`).join('')}
-  <button class="btn red full" data-v="">ยกเลิก</button>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; d.remove(); res(b.dataset.v || null); })); }); }
+// เลือกไม้ 2 ขั้น: ประเภท → เบอร์ (จำเบอร์ล่าสุดของแต่ละประเภท)
+function chooseClub(title = 'ตีด้วยไม้อะไร?') { return new Promise(res => {
+  const last = jget(localStorage, 'golf2_lastclub', {}), d = dlg(''), box = d.querySelector('.dlgbox');
+  const step1 = () => { box.innerHTML = `<p><b>${title}</b></p><div class="cmain">${CLUB_MAIN.map(([c, t]) => `<button data-c="${c}"><b>${c}</b><small>${CLUB_SUB[c] ? (last[c] ? 'ล่าสุด ' + last[c] + ' ›' : 'เลือกเบอร์ ›') : t}</small></button>`).join('')}</div><button class="btn red full" data-x="1">ยกเลิก</button>`; };
+  const step2 = c => { box.innerHTML = `<p><b>${c} · เบอร์อะไร?</b></p><div class="cnum">${CLUB_SUB[c].map(n => `<button data-v="${n}" class="${last[c] === n ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <button class="btn sec full" data-v="${c}">ไม่ระบุเบอร์ (${c})</button><button class="btn sec full" data-back="1">‹ เปลี่ยนประเภทไม้</button>`; };
+  step1();
+  d.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.x) { d.remove(); res(null); return; }
+    if (b.dataset.back) { step1(); return; }
+    if (b.dataset.c) { const c = b.dataset.c; if (CLUB_SUB[c]) step2(c); else { d.remove(); res(c); } return; }
+    if (b.dataset.v) { const v = b.dataset.v, cat = clubCat(v); if (v !== cat) { last[cat] = v; jset(localStorage, 'golf2_lastclub', last); } d.remove(); res(v); } });
+}); }
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+
+/* ---------- กันหลุด: แคชแก๊งไว้ในเครื่อง + คิวรอส่ง (ส่งซ้ำจนเซิร์ฟเวอร์ยืนยัน) ---------- */
+let OUT = {}, cacheTimer = null;
+const ckey = () => 'golf2_cache_' + CODE, okey = () => 'golf2_outbox_' + CODE;
+function loadOutbox() { OUT = jget(DEV, okey(), {}); }
+function saveOutbox() { jset(DEV, okey(), OUT); hdr(); }
+function saveCache() { clearTimeout(cacheTimer); const code = CODE, g = G; cacheTimer = setTimeout(() => { if (g && code) jset(DEV, 'golf2_cache_' + code, g); }, 300); }
+function setIn(o, rel, v) { const ks = rel.split('/'); let x = o; ks.slice(0, -1).forEach(k => { if (typeof x[k] !== 'object' || x[k] === null) x[k] = {}; x = x[k]; }); const l = ks[ks.length - 1]; if (v === null || v === undefined) delete x[l]; else x[l] = JSON.parse(JSON.stringify(v)); }
+// เขียนข้อมูลแก๊ง: แสดงผลทันที → เก็บในคิวในเครื่อง → ส่งขึ้นเซิร์ฟเวอร์ (ปิดแอป/เน็ตหลุด ก็ส่งต่อเองเมื่อกลับมา)
+function gw(rel, v) {
+  OUT[rel] = { v: v ?? null, seq: Date.now() + Math.random() }; saveOutbox();
+  if (G) { setIn(G, rel, v); saveCache(); refresh(); }
+  push(rel);
+}
+function push(rel) {
+  const e = OUT[rel], code = CODE; if (!e || !ST) return;
+  ST.set(`games/${code}/${rel}`, e.v).then(() => { if (CODE === code && OUT[rel] && OUT[rel].seq === e.seq) { delete OUT[rel]; saveOutbox(); } }).catch(() => {});
+}
+function flushOutbox() { Object.keys(OUT).forEach(push); }
+function refresh() {
+  if (UI.view !== 'game' || !G) return;
+  if (UI.tab === 'map' && mapObj) { mapObj.update(false); hdr(); return; }
+  if (document.activeElement && document.activeElement.matches('#app input,#app textarea,#app select')) { pending = true; hdr(); return; }
+  render();
+}
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+// กลับมาที่แอป (เปิดจอ/สลับแอปกลับมา/เน็ตกลับมา): ต่อเน็ตใหม่ ส่งของค้าง เปิด GPS ใหม่
+function onResume() {
+  if (document.visibilityState !== 'visible') return;
+  keepAwake(); if (!ST) return;
+  ST.reconnect(); flushOutbox();
+  if (UI.view === 'game' && G) { stopGps(); startGps(); sendLoc(true); autoDraw(); refresh(); }
+}
+document.addEventListener('visibilitychange', onResume);
+addEventListener('pageshow', onResume); addEventListener('focus', onResume); addEventListener('online', onResume);
+const ACTIVE_MS = 36 * 3600e3;
+function setActive(code) { jset(DEV, 'golf2_active', code ? { code, t: Date.now() } : null); }
 
 /* ---------- boot / routing ---------- */
 async function boot() {
@@ -49,38 +94,59 @@ async function boot() {
   try { ST = await makeStore(FIREBASE_CONFIG); } catch (e) { ST = null; }
   if (!ST) { UI.view = 'nocfg'; render(); return; }
   try { UID = await ST.auth(); } catch (e) { UI.view = 'err'; UI.err = e.message; render(); return; }
-  ST.online(v => { online = v; hdr(); });
+  ST.online(v => { const was = online; online = v; hdr(); if (v && !was) onResume(); });
   CODE = (Q.get('g') || '').toUpperCase() || null;
+  if (!CODE) { // เปิดแอปใหม่ (เช่น iPhone ปิดแอปไปเอง) → กลับเข้าแก๊งที่เล่นอยู่ทันที
+    const a = jget(DEV, 'golf2_active', null);
+    if (a && Date.now() - a.t < ACTIVE_MS && ids()[a.code]) { CODE = a.code; const u = new URL(location.href); u.searchParams.set('g', CODE); history.replaceState({}, '', u); }
+  }
+  if (CODE) history.pushState({}, '', location.href); // กันปุ่มย้อนกลับของ Android หลุดออกจากแอป
   route();
 }
 function setUrl(code) { const u = new URL(location.href); if (code) u.searchParams.set('g', code); else u.searchParams.delete('g'); history.pushState({}, '', u); }
-function go(code) { setUrl(code); CODE = code; route(); }
-addEventListener('popstate', () => { CODE = (new URLSearchParams(location.search).get('g') || '').toUpperCase() || null; route(); });
+function go(code) { if (!code) setActive(null); setUrl(code); CODE = code; route(); }
+// ปุ่มย้อนกลับ (Android): ปิดหน้าต่าง → กลับแท็บจดสกอร์ → ไม่หลุดออกจากแก๊ง
+addEventListener('popstate', () => {
+  const nc = (new URLSearchParams(location.search).get('g') || '').toUpperCase() || null;
+  const keep = () => { const u = new URL(location.href); u.searchParams.set('g', CODE); history.pushState({}, '', u); };
+  const d = document.querySelector('.dlg');
+  if (d && UI.view === 'game') { d.remove(); keep(); return; }
+  if (UI.view === 'game' && CODE) { keep(); if (UI.tab !== 'hole') { UI.tab = 'hole'; jset(DEV, 'golf2_tab', 'hole'); render(); scrollTo(0, 0); } else toast('ยังอยู่ในแก๊ง · กลับหน้าแรกได้ที่แท็บ 👥 แก๊ง'); return; }
+  CODE = nc; route();
+});
 async function route() {
   if (locUnsub) { locUnsub(); locUnsub = null; LOCS = {}; } if (liveMap) { liveMap.m.remove(); liveMap = null; }
   if (unsub) { unsub(); unsub = null; } if (geoUnsub) { geoUnsub(); geoUnsub = null; geoCache = null; } if (mapObj) { mapObj.destroy(); mapObj = null; } G = null; firstSnap = true; stopGps();
   if (!CODE) { UI.view = 'home'; render(); ST.get('courses').then(c => { UI.courses = c || {}; if (UI.view === 'home' || UI.view === 'create') render(); }).catch(() => {}); return; }
-  UI.view = 'loading'; render();
-  let meta = null; try { meta = await ST.get('games/' + CODE + '/meta'); } catch (e) {}
-  if (!meta) { UI.view = 'notfound'; render(); return; }
-  const id = ids()[CODE];
-  if (!id) { UI.view = 'join'; UI.joinMeta = meta; UI.pinOk = false; render(); return; }
-  ME = id.pid; UI.editPid = ME; UI.view = 'game'; UI.tab = jget(DEV, 'golf2_tab', 'hole');
+  const id = ids()[CODE], cached = id ? jget(DEV, ckey(), null) : null;
+  loadOutbox();
+  if (id && cached && cached.meta && cached.players?.[id.pid]) { // มีข้อมูลในเครื่อง → เปิดได้ทันทีแม้ไม่มีเน็ต
+    ME = id.pid; UI.editPid = ME; UI.view = 'game'; UI.tab = jget(DEV, 'golf2_tab', 'hole');
+    G = cached; G.meta.code = CODE; for (const r in OUT) setIn(G, r, OUT[r].v);
+    UI.cur = Math.min(jget(DEV, 'golf2_cur_' + CODE, 0), K.nHoles(G) - 1); setActive(CODE); render();
+  } else {
+    UI.view = 'loading'; render();
+    let meta = null, err = null; try { meta = await withTimeout(ST.get('games/' + CODE + '/meta'), 12000); } catch (e) { err = e; }
+    if (!meta) { UI.view = err ? 'nonet' : 'notfound'; render(); return; }
+    if (!id) { UI.view = 'join'; UI.joinMeta = meta; UI.pinOk = false; render(); return; }
+    ME = id.pid; UI.editPid = ME; UI.view = 'game'; UI.tab = jget(DEV, 'golf2_tab', 'hole');
+    UI.cur = jget(DEV, 'golf2_cur_' + CODE, 0); setActive(CODE);
+  }
+  flushOutbox();
   unsub = ST.on('games/' + CODE, g => onGame(g));
   locUnsub = ST.on('locs/' + CODE, v => { LOCS = v || {}; if (mapObj) mapObj.people(); updateLiveMap(); });
   geoUnsub = ST.on('geos/' + CODE, v => { geoCache = v; const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); });
 }
 function onGame(g) {
   if (!g || !g.meta) { UI.view = 'notfound'; render(); return; }
-  g.meta.code = CODE; G = g;
+  for (const r in OUT) setIn(g, r, OUT[r].v); // ของที่ยังส่งไม่สำเร็จ ให้แสดงค่าล่าสุดของเครื่องนี้
+  g.meta.code = CODE; G = g; saveCache(); setActive(CODE);
   if (!G.players?.[ME]) { setId(CODE, null); toast('คุณไม่ได้อยู่ในแก๊งนี้แล้ว'); route(); return; }
-  if (firstSnap) { const p = G.pos?.[ME]; if (p && p.hole != null) UI.cur = Math.min(p.hole, K.nHoles(G) - 1); else sendHole(UI.cur); }
+  if (firstSnap) { const p = G.pos?.[ME]; if (p && p.hole == null) sendHole(UI.cur); else if (!p) sendHole(UI.cur); UI.cur = Math.min(UI.cur, K.nHoles(G) - 1); }
   addMyGame({ code: CODE, name: G.meta.course || 'รอบกอล์ฟ', date: G.meta.date });
   autoDraw(); drawPopups();
   firstSnap = false;
-  if (UI.view === 'game' && UI.tab === 'map' && mapObj) { mapObj.update(false); hdr(); return; }
-  if (document.activeElement && document.activeElement.matches('#app input,#app textarea,#app select')) { pending = true; hdr(); return; }
-  render();
+  refresh();
 }
 document.addEventListener('focusout', () => setTimeout(() => { if (pending && !(document.activeElement && document.activeElement.matches('#app input,#app textarea'))) { pending = false; render(); } }, 50));
 
@@ -90,7 +156,7 @@ const DRAW_DELAY = Q.has('fast') ? 0 : 20000;
 function lastEdit(i) { return Math.max(0, ...K.players(G).map(p => K.ent(G, p.id, i)?.t || 0)); }
 function autoDraw() {
   if (!G) return;
-  const n = K.players(G).length;
+  const n = K.players(G).length; if (n < 2) return;
   for (let i = 0; i < K.nHoles(G); i++) if (K.holeDone(G, i) && !G.draws?.[hk(i)] && Date.now() - lastEdit(i) >= DRAW_DELAY)
     ST.txn(`games/${CODE}/draws/${hk(i)}`, cur => cur || { picks: K.makePicks(n), t: Date.now() }).catch(() => {});
 }
@@ -149,14 +215,15 @@ async function keepAwake() {
   if (wl || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
   try { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } catch (e) {}
 }
-document.addEventListener('visibilitychange', keepAwake);
+
 function hdr() {
   document.getElementById('dot').classList.toggle('on', online);
   document.querySelector('[data-act=sun]').classList.toggle('on', !!PREF.sun);
   document.querySelector('[data-act=wake]').classList.toggle('on', !!PREF.wake);
   const game = UI.view === 'game' && G;
   document.getElementById('title').textContent = game ? '⛳ ' + (G.meta.course || 'Golf Live') : '⛳ Golf Live';
-  document.getElementById('hinfo').innerHTML = game ? `${CODE}<br>${online ? 'ออนไลน์' : '<b style="color:#ffab91">ออฟไลน์</b>'}` : (MOCK ? 'โหมดทดสอบ' : '');
+  const np = Object.keys(OUT).length;
+  document.getElementById('hinfo').innerHTML = game ? `${CODE}<br>${online ? (np ? `กำลังส่ง ${np}` : 'ออนไลน์') : `<b style="color:#ffab91">ออฟไลน์${np ? ' · รอส่ง ' + np : ''}</b>`}` : (MOCK ? 'โหมดทดสอบ' : '');
   const nav = document.getElementById('tabs'); nav.hidden = !game; document.body.classList.toggle('nonav', !game);
   nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === UI.tab));
 }
@@ -173,6 +240,7 @@ function render() {
   else if (v === 'create') rCreate();
   else if (v === 'notfound') $app.innerHTML = `<div class="card center"><h2>ไม่พบแก๊ง ${esc(CODE)}</h2><p class="muted">รหัสอาจผิด หรือแก๊งถูกลบไปแล้ว</p><button class="btn full" data-act="home">กลับหน้าแรก</button></div>`;
   else if (v === 'join') rJoin();
+  else if (v === 'nonet') $app.innerHTML = `<div class="card center"><h2>📶 ยังเชื่อมต่อไม่ได้</h2><p class="muted">เข้าแก๊งครั้งแรกต้องใช้อินเทอร์เน็ต หลังจากนั้นเปิดได้แม้สัญญาณหาย</p><button class="btn full" data-act="retry">ลองใหม่</button><button class="btn sec full" data-act="home">กลับหน้าแรก</button></div>`;
   else if (v === 'hist') rHist();
   else if (v === 'game' && G) {
     ({ hole: rHole, map: rMap, live: rLive, sum: rSum, gang: rGang })[UI.tab]();
@@ -318,12 +386,12 @@ async function addShot(pid, i) {
   const club = await chooseClub(); if (!club) return;
   const t = Date.now(), s = { club, t };
   if (gps && pid === ME) { s.lat = +gps.lat.toFixed(6); s.lng = +gps.lng.toFixed(6); s.acc = Math.round(gps.acc || 0); }
-  await ST.set(`games/${CODE}/shots/${pid}/${hk(i)}/s${t}`, s);
+  gw(`shots/${pid}/${hk(i)}/s${t}`, s);
   sendLoc(true);
   toast(s.lat != null ? `บันทึก ${club} แล้ว ✓` : `บันทึก ${club} แล้ว (ไม่มีตำแหน่ง GPS)`);
 }
-function writeEntry(pid, i, e) { e.t = Date.now(); ST.set(`games/${CODE}/scores/${pid}/${hk(i)}`, e); if (pid === ME) sendHole(i); }
-function sendHole(i) { ST.update(`games/${CODE}/pos/${ME}`, { hole: i, t: Date.now() }); }
+function writeEntry(pid, i, e) { e.t = Date.now(); gw(`scores/${pid}/${hk(i)}`, e); if (pid === ME) sendHole(i); }
+function sendHole(i) { jset(DEV, 'golf2_cur_' + CODE, i); gw(`pos/${ME}`, { hole: i, t: Date.now() }); }
 
 /* ---------- game: map ---------- */
 function rMap() {
@@ -334,9 +402,9 @@ function rMap() {
     setHole: i => { UI.cur = i; sendHole(i); mapObj.update(true); hdr(); },
     gps: () => gps, unit: () => PREF.unit, pref: (k, d) => PREF[k] ?? d, setPref,
     toast, ask, info, choose, chooseClub,
-    saveShot: (i, s) => { ST.set(`games/${CODE}/shots/${ME}/${hk(i)}/s${s.t}`, s); sendLoc(true); },
+    saveShot: (i, s) => { gw(`shots/${ME}/${hk(i)}/s${s.t}`, s); sendLoc(true); },
     locs: () => LOCS,
-    delShot: (i, k) => ST.set(`games/${CODE}/shots/${ME}/${hk(i)}/${k}`, null),
+    delShot: (i, k) => gw(`shots/${ME}/${hk(i)}/${k}`, null),
     applyCourse: d => {
       const up = {};
       Object.entries(d.holes).forEach(([h, x]) => { if (x.par) up[`holes/${h}/par`] = x.par; if (x.si) up[`holes/${h}/si`] = x.si; });
@@ -590,6 +658,7 @@ document.addEventListener('click', async e => {
     case 'sun': setPref('sun', !PREF.sun); applyPrefs(); render(); return;
     case 'wake': setPref('wake', !PREF.wake); keepAwake(); toast(PREF.wake ? '💡 กันจอดับ: เปิด' : 'กันจอดับ: ปิด'); render(); return;
     case 'home': go(null); return;
+    case 'retry': route(); return;
     case 'create': UI.view = 'create'; render(); return;
     case 'docreate': t.disabled = true; try { await doCreate(); } catch (er) { toast('สร้างไม่สำเร็จ: ' + er.message); t.disabled = false; } return;
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
@@ -604,7 +673,7 @@ document.addEventListener('click', async e => {
     case 'jump': UI.cur = +v; sendHole(UI.cur); render(); return;
     case 'tab': UI.tab = v; jset(DEV, 'golf2_tab', v); render(); scrollTo(0, 0); return;
     case 'editfor': UI.editPid = v; render(); return;
-    case 'par': ST.set(`games/${CODE}/holes/${hk(i)}/par`, +v); return;
+    case 'par': gw(`holes/${hk(i)}/par`, +v); return;
     case 'inc': case 'dec': { const e0 = { on: null, putt: null, tee: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }, f = t.dataset.f;
       if (e0[f] == null) e0[f] = f === 'on' ? Math.max(1, K.par(G, i) - 2) : 2;
       else if (a === 'inc') e0[f] = Math.min(20, e0[f] + 1);
@@ -614,18 +683,19 @@ document.addEventListener('click', async e => {
     case 'pen': { const e0 = { on: null, putt: null, tee: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0[v] = ((e0[v] || 0) + 1) % 4; writeEntry(pid, i, e0); return; }
     case 'sortBy': UI.sortBy = v; render(); return;
     case 'shot': addShot(pid, i); return;
-    case 'delshot': { const sh = shotsOf(pid, i).find(x => x.k === v); if (sh && await ask(`ลบช็อต ${sh.club}?`)) ST.set(`games/${CODE}/shots/${pid}/${hk(i)}/${v}`, null); return; }
+    case 'delshot': { const sh = shotsOf(pid, i).find(x => x.k === v); if (sh && await ask(`ลบช็อต ${sh.club}?`)) gw(`shots/${pid}/${hk(i)}/${v}`, null); return; }
     case 'fitlive': updateLiveMap(true); return;
     case 'tip': toast(v); return;
     case 'sharelink': { const url = joinUrl(); if (navigator.share) { try { await navigator.share({ text: `เข้าแก๊งกอล์ฟ ${G.meta.course || ''} (รหัส ${CODE})`, url }); return; } catch (er) { if (er?.name === 'AbortError') return; } }
       try { await navigator.clipboard.writeText(url); toast('คัดลอกลิงก์แล้ว'); } catch (er) { info('ลิงก์เข้าแก๊ง', esc(url)); } return; }
     case 'addp': { const n = document.getElementById('addname').value.trim(); if (!n) return; if (K.players(G).length >= 10) return toast('ครบ 10 คนแล้ว');
       if (K.players(G).some(p => p.name.trim() === n)) return toast('ชื่อซ้ำ');
-      ST.set(`games/${CODE}/players/p${Date.now().toString(36)}`, { name: n, hc: '', uid: '', color: COLORS[K.players(G).length % COLORS.length], joinedAt: Date.now() }); return; }
-    case 'kick': { const p = G.players[v]; if (await ask(`เอา "${p.name}" ออกจากแก๊ง? (คะแนนของคนนี้จะหายด้วย)`)) ST.update('games/' + CODE, { ['players/' + v]: null, ['scores/' + v]: null, ['pos/' + v]: null, ['shots/' + v]: null }); return; }
-    case 'setmeta': ST.update(`games/${CODE}/meta`, { [t.dataset.k]: t.dataset.k === 'holes' ? +v : v }); return;
+      gw(`players/p${Date.now().toString(36)}`, { name: n, hc: '', uid: '', color: COLORS[K.players(G).length % COLORS.length], joinedAt: Date.now() }); return; }
+    case 'kick': { const p = G.players[v]; if (await ask(`เอา "${p.name}" ออกจากแก๊ง? (คะแนนของคนนี้จะหายด้วย)`)) ['players/', 'scores/', 'pos/', 'shots/'].forEach(k => gw(k + v, null)); return; }
+    case 'setmeta': gw(`meta/${t.dataset.k}`, t.dataset.k === 'holes' ? +v : v); return;
     case 'unit': setPref('unit', v); render(); return;
-    case 'leave': if (await ask('ออกจากแก๊งในเครื่องนี้? (คะแนนที่จดไว้ยังอยู่ เข้าใหม่ได้ด้วย PIN)')) { setId(CODE, null); go(null); } return;
+    case 'leave': if (Object.keys(OUT).length && !(await ask(`ยังมีข้อมูลรอส่ง ${Object.keys(OUT).length} รายการ (รอเน็ต) ถ้าออกตอนนี้จะหาย ออกเลยไหม?`))) return;
+      if (await ask('ออกจากแก๊งในเครื่องนี้? (คะแนนที่ส่งแล้วยังอยู่ เข้าใหม่ได้ด้วย PIN)')) { DEV.removeItem(okey()); DEV.removeItem(ckey()); setId(CODE, null); go(null); } return;
     case 'img': scoreImage(); return;
     case 'copytxt': { const s = sumText(); try { await navigator.clipboard.writeText(s); toast('คัดลอกแล้ว ✓'); } catch (er) { info('สรุป', `<textarea style="height:200px">${esc(s)}</textarea>`); } return; }
     case 'saveround': saveRound(); return;
@@ -634,10 +704,10 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   const t = e.target, d = t.dataset;
-  if (d.meta) { let val = t.value.trim(); if (['cr', 'slope', 'lunch'].includes(d.meta)) val = val === '' ? '' : val; ST.update(`games/${CODE}/meta`, { [d.meta]: val }); }
-  if (d.amt) { const am = K.amounts(G); am[+d.amt] = +t.value || 0; ST.update(`games/${CODE}/meta`, { amounts: am }); }
-  if (d.phc) ST.update(`games/${CODE}/players/${d.phc}`, { hc: t.value.trim() });
-  if (d.hset) ST.set(`games/${CODE}/holes/${hk(UI.cur)}/${d.hset}`, t.value.trim());
+  if (d.meta) gw(`meta/${d.meta}`, t.value.trim());
+  if (d.amt) { const am = K.amounts(G); am[+d.amt] = +t.value || 0; gw('meta/amounts', am); }
+  if (d.phc) gw(`players/${d.phc}/hc`, t.value.trim());
+  if (d.hset) gw(`holes/${hk(UI.cur)}/${d.hset}`, t.value.trim());
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'j_pin') checkPin(); if (e.key === 'Enter' && e.target.id === 'jcode') document.querySelector('[data-act=joincode]')?.click(); });
 // iPhone: บังคับ focus ช่องกรอกตอนยกนิ้ว
