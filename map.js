@@ -1,7 +1,8 @@
 // แผนที่สนาม: ภาพดาวเทียม + กรีน/บังเกอร์/น้ำจาก OpenStreetMap, ระยะถึงกรีน (GPS), บันทึกช็อต
 import { hk, dist, par } from './golf.js';
 const L = window.L;
-const SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+export const SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STY = {
   rough: { color: '#33691e', weight: 0, fillColor: '#558b2f', fillOpacity: .35 },
   fairway: { color: '#7cb342', weight: 1, fillColor: '#8bc34a', fillOpacity: .7 },
@@ -11,7 +12,15 @@ const STY = {
   green: { color: '#1b5e20', weight: 1.5, fillColor: '#43a047', fillOpacity: .9 },
 };
 const ORDER = ['rough', 'fairway', 'tee', 'water', 'bunker', 'green'];
-export const CLUBS = ['Dr', '3W', '5W', '7W', 'Hy', '3i', '4i', '5i', '6i', '7i', '8i', '9i', 'PW', 'GW', 'SW', 'LW', 'Putt'];
+// ไม้กอล์ฟ: กลุ่มหลัก (กดครั้งเดียว) + ระบุเบอร์ได้ถ้าต้องการ
+export const CLUB_MAIN = [['D', 'Driver'], ['FW', 'แฟร์เวย์วู้ด'], ['HY', 'ไฮบริด'], ['Iron', 'เหล็ก'], ['Wedge', 'เวดจ์'], ['Putter', 'พัตเตอร์']];
+export const CLUB_SUB = { FW: ['3W', '5W', '7W'], HY: ['3H', '4H', '5H'], Iron: ['4i', '5i', '6i', '7i', '8i', '9i'], Wedge: ['PW', 'GW', 'SW', 'LW'] };
+export const CLUB_ORDER = ['D', 'FW', '3W', '5W', '7W', 'HY', '3H', '4H', '5H', 'Iron', '4i', '5i', '6i', '7i', '8i', '9i', 'Wedge', 'PW', 'GW', 'SW', 'LW', 'Putter'];
+export function clubCat(c) { if (c === 'D' || c === 'Putter' || CLUB_MAIN.some(m => m[0] === c)) return c; for (const k in CLUB_SUB) if (CLUB_SUB[k].includes(c)) return k; return c; }
+// หมุดผู้เล่นบนแผนที่ (สีประจำตัว + ชื่อ + หลุม)
+export function personIcon(name, color, hole, stale) {
+  return L.divIcon({ className: '', iconSize: [0, 0], html: `<div class="pp ${stale ? 'stale' : ''}" style="--c:${color || '#2e7d32'}"><b>${esc((name || '?').slice(0, 1))}</b><span>${esc(name)}${hole != null ? ' · H' + (hole + 1) : ''}</span></div>` });
+}
 
 function pip(pt, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [yi, xi] = poly[i], [yj, xj] = poly[j]; if (((yi > pt[0]) !== (yj > pt[0])) && (pt[1] < (xj - xi) * (pt[0] - yi) / (yj - yi) + xi)) c = !c; } return c; }
 function centroid(poly) { let a = 0, b = 0; poly.forEach(p => { a += p[0]; b += p[1]; }); return [a / poly.length, b / poly.length]; }
@@ -109,7 +118,7 @@ export function createMap(el, ctx) {
     }
     drawShots(); drawPeople(); drawMe(); drawDist(); drawTarget();
   }
-  function myShots(i) { const s = ctx.G().shots?.[ctx.me]?.[hk(i)] || {}; return Object.entries(s).map(([k, v]) => ({ k, ...v })).sort((a, b) => a.t - b.t); }
+  function myShots(i) { const s = ctx.G().shots?.[ctx.me]?.[hk(i)] || {}; return Object.entries(s).map(([k, v]) => ({ k, ...v })).filter(x => x.lat != null).sort((a, b) => a.t - b.t); }
   function drawShots() {
     shotL.clearLayers(); const i = ctx.hole(), s = myShots(i), h = hg(i);
     el.querySelector('#mshots').textContent = `ช็อต (${s.length})`;
@@ -124,10 +133,10 @@ export function createMap(el, ctx) {
   }
   function drawPeople() {
     peopleL.clearLayers(); const G = ctx.G(), now = Date.now();
-    Object.entries(G.pos || {}).forEach(([pid, p]) => {
-      if (pid === ctx.me || p.lat == null || now - (p.gt || 0) > 15 * 60e3) return;
-      const nm = G.players?.[pid]?.name; if (!nm) return;
-      L.marker([p.lat, p.lng], { icon: lbl(`${nm} · H${(p.hole ?? 0) + 1}`), interactive: false }).addTo(peopleL);
+    Object.entries(ctx.locs() || {}).forEach(([pid, p]) => {
+      if (pid === ctx.me || p.lat == null || now - (p.gt || 0) > 30 * 60e3) return;
+      const pl = G.players?.[pid]; if (!pl) return;
+      L.marker([p.lat, p.lng], { icon: personIcon(pl.name, pl.color, G.pos?.[pid]?.hole, now - p.gt > 3 * 60e3), interactive: false, zIndexOffset: 500 }).addTo(peopleL);
     });
   }
   function drawMe() {
@@ -198,6 +207,7 @@ export function createMap(el, ctx) {
   return {
     update(holeChanged) { drawHole(holeChanged); },
     gps() { drawMe(); drawDist(); drawTarget(); },
+    people() { drawPeople(); },
     destroy() { unsubGeo && unsubGeo(); map.remove(); },
     geo: () => geo,
   };

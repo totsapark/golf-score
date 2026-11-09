@@ -1,6 +1,7 @@
 {
   "rules": {
     "games": { "$code": { ".read": "auth != null", ".write": "auth != null" } },
+    "locs": { "$code": { ".read": "auth != null", "$pid": { ".write": "auth != null" } } },
     "geos": { "$code": { ".read": "auth != null", ".write": "auth != null" } },
     "courses": { ".read": "auth != null", "$cid": { ".write": "auth != null" } },
     "coursegeo": { "$cid": { ".read": "auth != null", ".write": "auth != null" } }

@@ -2,14 +2,14 @@ import { FIREBASE_CONFIG } from './config.js';
 import { makeStore } from './store.js';
 import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
-import { createMap, CLUBS } from './map.js';
+import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon } from './map.js';
 
-const APPVER = '2.0.0';
+const APPVER = '2.1.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
 const { hk } = K;
-let ST = null, UID = null, G = null, CODE = null, ME = null, unsub = null, online = true, firstSnap = true, pending = false, mapObj = null, gps = null, gpsWatch = null, lastPosSent = 0;
+let ST = null, UID = null, G = null, CODE = null, ME = null, unsub = null, online = true, firstSnap = true, pending = false, mapObj = null, gps = null, gpsWatch = null, lastPosSent = 0, lastPos = null, LOCS = {}, locUnsub = null, liveMap = null;
 const UI = { view: 'loading', tab: 'hole', cur: 0, editPid: null, sortBy: 'gross', joinMeta: null, pinOk: false, courses: {} };
 
 /* ---------- local storage helpers ---------- */
@@ -36,7 +36,11 @@ function dlg(html, bind) { const d = document.createElement('div'); d.className 
 function ask(msg) { return new Promise(res => { dlg(`<p>${esc(msg)}</p><div class="grid2"><button class="btn sec" data-r="0">ยกเลิก</button><button class="btn" data-r="1">ตกลง</button></div>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; d.remove(); res(b.dataset.r === '1'); })); }); }
 function info(title, html) { dlg(`<h3 style="margin:0 0 10px;color:#1b5e20">${title}</h3><div style="text-align:left;font-size:15px;line-height:1.6">${html}</div><button class="btn full" data-r>ปิด</button>`, d => d.addEventListener('click', e => { if (e.target.closest('[data-r]')) d.remove(); })); }
 function choose(title, opts) { return new Promise(res => { dlg(`<p><b>${title}</b></p>${opts.map(([v, t]) => `<button class="btn sec full" data-v="${v}">${t}</button>`).join('')}<button class="btn red full" data-v="">ยกเลิก</button>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; d.remove(); res(b.dataset.v || null); })); }); }
-function chooseClub() { return new Promise(res => { dlg(`<p><b>ตีด้วยไม้อะไร?</b></p><div class="clubs">${CLUBS.map(c => `<button data-v="${c}">${c}</button>`).join('')}</div><button class="btn red full" data-v="">ยกเลิก</button>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; d.remove(); res(b.dataset.v || null); })); }); }
+function chooseClub(title = 'ตีด้วยไม้อะไร?') { return new Promise(res => { dlg(`<p><b>${title}</b></p>
+  <div class="cmain">${CLUB_MAIN.map(([c, t]) => `<button data-v="${c}"><b>${c}</b><small>${t}</small></button>`).join('')}</div>
+  <p class="muted" style="margin:12px 0 4px">ระบุเบอร์ (ไม่บังคับ)</p>
+  ${Object.entries(CLUB_SUB).map(([k, a]) => `<div class="csub"><span>${k}</span>${a.map(c => `<button data-v="${c}">${c}</button>`).join('')}</div>`).join('')}
+  <button class="btn red full" data-v="">ยกเลิก</button>`, d => d.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; d.remove(); res(b.dataset.v || null); })); }); }
 function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
 
 /* ---------- boot / routing ---------- */
@@ -53,6 +57,7 @@ function setUrl(code) { const u = new URL(location.href); if (code) u.searchPara
 function go(code) { setUrl(code); CODE = code; route(); }
 addEventListener('popstate', () => { CODE = (new URLSearchParams(location.search).get('g') || '').toUpperCase() || null; route(); });
 async function route() {
+  if (locUnsub) { locUnsub(); locUnsub = null; LOCS = {}; } if (liveMap) { liveMap.m.remove(); liveMap = null; }
   if (unsub) { unsub(); unsub = null; } if (geoUnsub) { geoUnsub(); geoUnsub = null; geoCache = null; } if (mapObj) { mapObj.destroy(); mapObj = null; } G = null; firstSnap = true; stopGps();
   if (!CODE) { UI.view = 'home'; render(); ST.get('courses').then(c => { UI.courses = c || {}; if (UI.view === 'home' || UI.view === 'create') render(); }).catch(() => {}); return; }
   UI.view = 'loading'; render();
@@ -62,13 +67,14 @@ async function route() {
   if (!id) { UI.view = 'join'; UI.joinMeta = meta; UI.pinOk = false; render(); return; }
   ME = id.pid; UI.editPid = ME; UI.view = 'game'; UI.tab = jget(DEV, 'golf2_tab', 'hole');
   unsub = ST.on('games/' + CODE, g => onGame(g));
+  locUnsub = ST.on('locs/' + CODE, v => { LOCS = v || {}; if (mapObj) mapObj.people(); updateLiveMap(); });
   geoUnsub = ST.on('geos/' + CODE, v => { geoCache = v; const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); });
 }
 function onGame(g) {
   if (!g || !g.meta) { UI.view = 'notfound'; render(); return; }
   g.meta.code = CODE; G = g;
   if (!G.players?.[ME]) { setId(CODE, null); toast('คุณไม่ได้อยู่ในแก๊งนี้แล้ว'); route(); return; }
-  if (firstSnap) { const p = G.pos?.[ME]; if (p && p.hole != null) UI.cur = Math.min(p.hole, K.nHoles(G) - 1); }
+  if (firstSnap) { const p = G.pos?.[ME]; if (p && p.hole != null) UI.cur = Math.min(p.hole, K.nHoles(G) - 1); else sendHole(UI.cur); }
   addMyGame({ code: CODE, name: G.meta.course || 'รอบกอล์ฟ', date: G.meta.date });
   autoDraw(); drawPopups();
   firstSnap = false;
@@ -113,9 +119,18 @@ function startGps() {
     gps = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() };
     if (mapObj) mapObj.gps();
     if (UI.tab === 'hole') { const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); }
-    if (CODE && ME && Date.now() - lastPosSent > 20000) { lastPosSent = Date.now(); ST.update(`games/${CODE}/pos/${ME}`, { lat: +gps.lat.toFixed(6), lng: +gps.lng.toFixed(6), gt: Date.now() }); }
+    sendLoc();
   }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
 }
+// ส่งตำแหน่งตัวเองให้เพื่อนเห็น: ทุก ~5 วิเมื่อขยับเกิน 5 ม. และอย่างน้อยทุก 30 วิ
+function sendLoc(force) {
+  if (!CODE || !ME || !gps || UI.view !== 'game') return;
+  const now = Date.now(), moved = lastPos ? K.dist([lastPos.lat, lastPos.lng], [gps.lat, gps.lng]) : 1e9;
+  if (!force && (now - lastPosSent < 5000 || (moved < 5 && now - lastPosSent < 30000))) return;
+  lastPosSent = now; lastPos = { ...gps };
+  ST.set(`locs/${CODE}/${ME}`, { lat: +gps.lat.toFixed(6), lng: +gps.lng.toFixed(6), acc: Math.round(gps.acc || 0), gt: now });
+}
+setInterval(() => sendLoc(), 10000);
 function stopGps() { if (gpsWatch != null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; } }
 let geoCache = null, geoUnsub = null; // ข้อมูลสนามสำหรับระยะในหน้าจดสกอร์
 function gpsLine() {
@@ -161,7 +176,7 @@ function render() {
   else if (v === 'hist') rHist();
   else if (v === 'game' && G) {
     ({ hole: rHole, map: rMap, live: rLive, sum: rSum, gang: rGang })[UI.tab]();
-    if (UI.tab === 'hole' || UI.tab === 'map') startGps();
+    startGps(); if (UI.tab === 'live') mountLiveMap();
   }
 }
 function rNoCfg() {
@@ -281,10 +296,31 @@ function rHole() {
       <button class="l ${e.tee === 'l' ? 'on' : ''}" data-act="tee" data-v="l">⬅ ซ้าย</button><button class="${e.tee === 's' ? 'on' : ''}" data-act="tee" data-v="s">⬆ ตรง</button><button class="r ${e.tee === 'r' ? 'on' : ''}" data-act="tee" data-v="r">ขวา ➡</button></div></div>
     <div class="grid4 pen">${K.PEN.map(([k, ic, nm, pt]) => `<button class="${e[k] ? 'on' : ''} ${pt ? '' : 'sand'}" data-act="pen" data-v="${k}">${ic} ${nm}<b>${e[k] ? '×' + e[k] + (pt ? ' (+' + e[k] * pt + ')' : '') : pt ? 'โทษ +1' : 'ไม่มีโทษ'}</b></button>`).join('')}</div>
     ${sc != null ? `<div class="formula">สกอร์ ${sc} = ออน ${e.on} + พัตต์ ${e.putt}${pn ? ` + โทษ ${pn}` : ''}${st ? ` · Net ${sc - st}` : ''}</div>` : ''}</div>
+  <div class="card"><div class="ptop"><h2 style="margin:0">🏌️ ช็อตหลุมนี้</h2><span class="muted">${pid === ME ? '' : 'ของ ' + esc(p.name)}</span></div>
+    ${shotList(pid, i)}
+    <button class="btn full big-btn" data-act="shot">📍 ตีแล้ว · บันทึกช็อต</button>
+    <p class="muted center" style="margin:6px 0 0">กดตอนยืนที่ลูกก่อนตี แล้วเลือกไม้ ระบบจะจำตำแหน่งและคำนวณระยะให้</p></div>
   <div class="card"><h2>👥 หลุมนี้ของแก๊ง ${K.hasHC(G) ? `<span class="muted">(เงินคิดด้วย ${G.meta.moneyBy === 'net' ? 'Net' : 'Gross'})</span>` : ''}</h2>
     <table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${K.hasHC(G) ? '<th>Net</th>' : ''}<th>เสีย</th></tr>${rows}</table>
     ${mo.picks ? `<div class="note">🎲 สุ่มได้อันดับ ${mo.picks.join(', ')} → ${K.amounts(G).slice(0, mo.picks.length).join(' / ')} บาท</div>` : mo.done ? `<p class="muted center">🎲 ทุกคนจดครบแล้ว กำลังจะสุ่ม... (แก้คะแนนได้ภายใน 20 วินาที)</p>` : `<p class="muted center">🎲 สุ่มเงินอัตโนมัติเมื่อทุกคนจดหลุมนี้ครบ</p>`}</div>
   ${i < N - 1 ? `<button class="btn full big-btn" data-act="next">ไปหลุม ${i + 2} ▶</button>` : `<button class="btn full big-btn" data-act="tab" data-v="sum">ดูสรุปผล 🏁</button>`}`;
+}
+function shotsOf(pid, i) { return Object.entries(G.shots?.[pid]?.[hk(i)] || {}).map(([k, v]) => ({ k, ...v })).sort((a, b) => a.t - b.t); }
+function shotList(pid, i) {
+  const s = shotsOf(pid, i), green = geoCache?.holes?.[hk(i)]?.green, u = PREF.unit === 'y' ? 1.09361 : 1, un = PREF.unit === 'y' ? 'หลา' : 'ม.';
+  if (!s.length) return '<p class="muted" style="margin:4px 0">ยังไม่มีช็อต</p>';
+  return `<div class="shots">${s.map((x, k) => { const nx = s[k + 1], d = nx && x.lat != null && nx.lat != null ? K.dist([x.lat, x.lng], [nx.lat, nx.lng]) : null;
+    const left = !nx && green && x.lat != null ? K.dist([x.lat, x.lng], green) : null;
+    return `<span class="shot" data-act="delshot" data-v="${x.k}"><b>${k + 1}</b> ${esc(x.club)}${d ? ` · ${Math.round(d * u)}` : left ? ` · เหลือ ${Math.round(left * u)}` : ''}</span>`; }).join('<i>›</i>')}</div>
+    <p class="muted" style="margin:4px 0 0">ระยะเป็น${un} · แตะที่ช็อตเพื่อลบ</p>`;
+}
+async function addShot(pid, i) {
+  const club = await chooseClub(); if (!club) return;
+  const t = Date.now(), s = { club, t };
+  if (gps && pid === ME) { s.lat = +gps.lat.toFixed(6); s.lng = +gps.lng.toFixed(6); s.acc = Math.round(gps.acc || 0); }
+  await ST.set(`games/${CODE}/shots/${pid}/${hk(i)}/s${t}`, s);
+  sendLoc(true);
+  toast(s.lat != null ? `บันทึก ${club} แล้ว ✓` : `บันทึก ${club} แล้ว (ไม่มีตำแหน่ง GPS)`);
 }
 function writeEntry(pid, i, e) { e.t = Date.now(); ST.set(`games/${CODE}/scores/${pid}/${hk(i)}`, e); if (pid === ME) sendHole(i); }
 function sendHole(i) { ST.update(`games/${CODE}/pos/${ME}`, { hole: i, t: Date.now() }); }
@@ -298,7 +334,8 @@ function rMap() {
     setHole: i => { UI.cur = i; sendHole(i); mapObj.update(true); hdr(); },
     gps: () => gps, unit: () => PREF.unit, pref: (k, d) => PREF[k] ?? d, setPref,
     toast, ask, info, choose, chooseClub,
-    saveShot: (i, s) => ST.set(`games/${CODE}/shots/${ME}/${hk(i)}/s${s.t}`, s),
+    saveShot: (i, s) => { ST.set(`games/${CODE}/shots/${ME}/${hk(i)}/s${s.t}`, s); sendLoc(true); },
+    locs: () => LOCS,
     delShot: (i, k) => ST.set(`games/${CODE}/shots/${ME}/${hk(i)}/${k}`, null),
     applyCourse: d => {
       const up = {};
@@ -314,6 +351,33 @@ function board() {
   const byNet = UI.sortBy === 'net' && K.hasHC(G);
   return K.players(G).map(p => ({ p, s: K.stats(G, p.id), th: K.thru(G, p.id) }))
     .sort((a, b) => { const f = x => x.s.n ? (byNet ? x.s.net : x.s.gross) - x.s.par : 1e9; return f(a) - f(b) || b.th - a.th; });
+}
+function mountLiveMap() {
+  const ph = document.getElementById('livemap'); if (!ph) return;
+  if (!liveMap) {
+    const el = document.createElement('div'); el.style.cssText = 'position:absolute;inset:0'; ph.appendChild(el);
+    const m = L.map(el, { zoomControl: false, maxZoom: 20 }); m.attributionControl.setPrefix(false);
+    L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 20, attribution: 'Imagery © Esri' }).addTo(m); m.setView([13.75, 100.5], 6);
+    liveMap = { el, m, geoL: L.layerGroup().addTo(m), ppl: L.layerGroup().addTo(m), fitted: false, touched: 0 };
+    m.on('dragstart', () => { liveMap.touched = Date.now(); });
+  } else ph.appendChild(liveMap.el);
+  setTimeout(() => { if (liveMap) { liveMap.m.invalidateSize(); updateLiveMap(); } }, 30);
+}
+function updateLiveMap(refit) {
+  if (!liveMap || !G || !document.body.contains(liveMap.el)) return;
+  const now = Date.now(), pts = [];
+  liveMap.geoL.clearLayers();
+  Object.entries(geoCache?.holes || {}).forEach(([h, x]) => { if (!x.green || +h.slice(1) >= K.nHoles(G)) return; pts.push(x.green);
+    L.marker(x.green, { interactive: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="mlbl w" style="transform:translate(-50%,-50%);display:inline-block">⛳${+h.slice(1) + 1}</span>` }) }).addTo(liveMap.geoL); });
+  liveMap.ppl.clearLayers(); let n = 0;
+  K.players(G).forEach(p => { const l = (p.id === ME && gps) ? { lat: gps.lat, lng: gps.lng, gt: now } : LOCS[p.id]; if (!l || l.lat == null || now - (l.gt || 0) > 6 * 3600e3) return; n++;
+    const ll = [l.lat, l.lng]; pts.push(ll);
+    L.marker(ll, { icon: personIcon(p.name, p.color, G.pos?.[p.id]?.hole, now - l.gt > 3 * 60e3), zIndexOffset: p.id === ME ? 1000 : 0 }).addTo(liveMap.ppl)
+      .bindPopup(`<b>${esc(p.name)}</b><br>หลุม ${(G.pos?.[p.id]?.hole ?? 0) + 1} · ${ago(l.gt)}`); });
+  const cnt = document.getElementById('livecnt'); if (cnt) cnt.textContent = n ? `เห็นตำแหน่ง ${n}/${K.players(G).length} คน` : 'ยังไม่มีใครเปิด GPS';
+  // ถ้ามีคนเดินออกนอกจอ และไม่ได้เลื่อนแผนที่เองใน 30 วิ → ซูมให้เห็นทุกคน
+  const out = pts.length && liveMap.fitted && Date.now() - liveMap.touched > 30000 && !pts.every(q => liveMap.m.getBounds().contains(q));
+  if ((refit || !liveMap.fitted || out) && pts.length) { liveMap.m.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 18 }); liveMap.fitted = true; }
 }
 function rLive() {
   const hc = K.hasHC(G), L = board(), N = K.nHoles(G), now = Date.now();
@@ -331,6 +395,8 @@ function rLive() {
     : `<div><b>${esc(P[f.pid]?.name)}</b> หลุม ${f.i + 1}: <span class="badge ${K.label(f.sc, K.par(G, f.i))[1]}">${f.sc} · ${K.label(f.sc, K.par(G, f.i))[0]}</span> <span class="muted">· ${ago(f.t)}</span></div>`).join('');
   $app.innerHTML = `
   <div class="card"><h2><span class="live"></span>ใครอยู่หลุมไหน</h2><div class="who">${who}</div></div>
+  <div class="card" style="padding:0;overflow:hidden"><div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px"><h2 style="margin:0">🗺️ ทุกคนอยู่ตรงไหน</h2><button class="btn sec" style="padding:6px 10px;font-size:14px" data-act="fitlive">ดูทุกคน</button></div>
+    <div id="livemap" style="position:relative;height:340px;background:#333"></div><p class="muted" id="livecnt" style="padding:6px 12px;margin:0"></p></div>
   <div class="card"><h2>🏆 Leaderboard สด</h2>
     ${hc ? `<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${UI.sortBy !== 'net' ? 'on' : ''}">Gross</button><button data-act="sortBy" data-v="net" class="${UI.sortBy === 'net' ? 'on' : ''}">Net</button></div>` : ''}
     <div class="scroll"><table><tr><th>#</th><th class="l">ผู้เล่น</th><th>To Par</th>${hc ? '<th>Net</th>' : ''}<th>Thru</th><th>อยู่</th><th>สกอร์</th><th>เสีย</th></tr>${rows}</table></div>
@@ -356,9 +422,10 @@ function clubStats() {
   const m = {};
   Object.values(G.shots?.[ME] || {}).forEach(hs => {
     const s = Object.values(hs || {}).sort((a, b) => a.t - b.t);
-    s.forEach((x, k) => { const nx = s[k + 1]; if (!nx || x.club === 'Putt') return; const d = K.dist([x.lat, x.lng], [nx.lat, nx.lng]); if (d < 3) return; (m[x.club] = m[x.club] || []).push(d); });
+    s.forEach((x, k) => { const nx = s[k + 1]; const r = (m[x.club] = m[x.club] || { all: 0, d: [] }); r.all++;
+      if (!nx || clubCat(x.club) === 'Putter' || x.lat == null || nx.lat == null) return; const d = K.dist([x.lat, x.lng], [nx.lat, nx.lng]); if (d >= 3) r.d.push(d); });
   });
-  return Object.entries(m).map(([c, a]) => ({ c, n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length, max: Math.max(...a) }));
+  return Object.entries(m).map(([c, r]) => ({ c, cat: clubCat(c), n: r.all, nd: r.d.length, avg: r.d.length ? r.d.reduce((x, y) => x + y, 0) / r.d.length : null, max: r.d.length ? Math.max(...r.d) : null }));
 }
 function rSum() {
   const hc = K.hasHC(G), list = board().map(x => ({ ...x, m: K.more(G, x.p.id) })), played = list.filter(x => x.s.n), N = K.nHoles(G), two = N == 18;
@@ -380,7 +447,7 @@ function rSum() {
   const bill = +G.meta.lunch || 0, n = list.length, extra = bill > pot && n ? Math.ceil((bill - pot) / n) : 0, left = pot > bill && bill ? pot - bill : 0;
   const moneyT = list.map(x => `<tr>${nm(x)}<td>${x.m.hits}</td><td class="pay">${x.s.money} ฿</td>${bill ? `<td><b>${x.s.money + extra} ฿</b></td>` : ''}</tr>`).join('');
   const cl = clubStats(), u = PREF.unit === 'y' ? 1.09361 : 1, un = PREF.unit === 'y' ? 'หลา' : 'ม.';
-  const order = CLUBS; cl.sort((a, b) => order.indexOf(a.c) - order.indexOf(b.c));
+  cl.sort((a, b) => CLUB_ORDER.indexOf(a.c) - CLUB_ORDER.indexOf(b.c));
   $app.innerHTML = `
   <div class="card"><h2>🏁 สรุปผล · ${esc(G.meta.course || '')}</h2><p class="muted" style="margin-top:-6px">${thDate(G.meta.date)}${G.meta.tee ? ' · Tee ' + esc(G.meta.tee) : ''}</p>
     ${hc ? `<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${UI.sortBy !== 'net' ? 'on' : ''}">เรียง Gross</button><button data-act="sortBy" data-v="net" class="${UI.sortBy === 'net' ? 'on' : ''}">เรียง Net</button></div>` : ''}
@@ -395,7 +462,8 @@ function rSum() {
   ${shortT ? `<div class="card"><h2>🎯 พัตต์ & ลูกสั้น</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>พัตต์<br>/หลุม</th><th>พัตต์<br>/GIR</th><th>1 พัตต์</th><th>3 พัตต์+</th><th>ชิปลง</th><th>Scram-<br>bling</th><th>Bounce<br>back</th></tr>${shortT}</table></div></div>` : ''}
   <div class="card"><h2>🚫 ลูกโทษ & บังเกอร์</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>🌳</th><th>💧</th><th>🚫 OB</th><th>แต้มโทษ</th><th>🏖️</th><th>Sand save</th></tr>${penT}</table></div></div>
   <div class="card"><h2>🏌️ Tee-off</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>⬅</th><th>⬆</th><th>➡</th><th>Fairway<br>Par 4-5</th><th>สกอร์เมื่อ<br>ตีตรง</th><th>เมื่อ<br>ไม่ตรง</th></tr>${teeT}</table></div></div>
-  <div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2>${cl.length ? `<table><tr><th class="l">ไม้</th><th>ครั้ง</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b></td><td>${c.n}</td><td><b>${Math.round(c.avg * u)}</b></td><td>${Math.round(c.max * u)}</td></tr>`).join('')}</table>` : '<p class="muted">ยังไม่มี · กด "📍 บันทึกช็อต" ในแท็บแผนที่ตอนยืนที่ลูกทุกช็อต ระบบจะคำนวณระยะแต่ละไม้ให้</p>'}</div>
+  <div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2>${cl.length ? `<table><tr><th class="l">ไม้</th><th>ใช้</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b>${c.cat !== c.c ? ` <span class="muted">${c.cat}</span>` : ''}</td><td>${c.n}</td><td><b>${c.avg != null ? Math.round(c.avg * u) : '-'}</b></td><td>${c.max != null ? Math.round(c.max * u) : '-'}</td></tr>`).join('')}</table>
+    <p class="muted">ระยะคำนวณจากตำแหน่งช็อตนั้นถึงช็อตถัดไป (ช็อตสุดท้ายของหลุมและพัตต์ไม่นับระยะ)</p>` : '<p class="muted">ยังไม่มี · กด "📍 ตีแล้ว · บันทึกช็อต" ตอนยืนที่ลูกทุกช็อต แล้วเลือกไม้ ระบบจะคำนวณระยะแต่ละไม้ให้</p>'}</div>
   <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll">${scorecard()}</div></div>
   <div class="card"><h2>📤 แชร์ & บันทึก</h2>
     <button class="btn full" data-act="img">📷 ส่งรูปสกอร์การ์ด</button>
@@ -545,6 +613,9 @@ document.addEventListener('click', async e => {
     case 'tee': { const e0 = { on: null, putt: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0.tee = e0.tee === v ? null : v; writeEntry(pid, i, e0); return; }
     case 'pen': { const e0 = { on: null, putt: null, tee: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0[v] = ((e0[v] || 0) + 1) % 4; writeEntry(pid, i, e0); return; }
     case 'sortBy': UI.sortBy = v; render(); return;
+    case 'shot': addShot(pid, i); return;
+    case 'delshot': { const sh = shotsOf(pid, i).find(x => x.k === v); if (sh && await ask(`ลบช็อต ${sh.club}?`)) ST.set(`games/${CODE}/shots/${pid}/${hk(i)}/${v}`, null); return; }
+    case 'fitlive': updateLiveMap(true); return;
     case 'tip': toast(v); return;
     case 'sharelink': { const url = joinUrl(); if (navigator.share) { try { await navigator.share({ text: `เข้าแก๊งกอล์ฟ ${G.meta.course || ''} (รหัส ${CODE})`, url }); return; } catch (er) { if (er?.name === 'AbortError') return; } }
       try { await navigator.clipboard.writeText(url); toast('คัดลอกลิงก์แล้ว'); } catch (er) { info('ลิงก์เข้าแก๊ง', esc(url)); } return; }

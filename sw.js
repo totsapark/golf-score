@@ -1,5 +1,5 @@
 // Golf Live service worker: เปิดแอปเร็ว (แคชตัวแอป) + แคชภาพดาวเทียมที่เคยดู
-const C = 'golflive-v1', TILES = 'golflive-tiles';
+const C = 'golflive-v2', TILES = 'golflive-tiles';
 const SHELL = ['./', './index.html', './app.js', './store.js', './golf.js', './map.js', './config.js', './vendor/fb.js', './vendor/leaflet.js', './vendor/leaflet.css', './vendor/qrcode.mjs', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== C && x !== TILES).map(x => caches.delete(x))))); self.clients.claim(); });
