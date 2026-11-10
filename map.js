@@ -36,16 +36,27 @@ export async function importOSM(lat, lng, radius = 2000) {
   const a = `(around:${Math.round(radius)},${lat},${lng})`;
   const q = `[out:json][timeout:40];(way["golf"]${a};relation["golf"]${a};way["natural"="water"]${a};way["leisure"="golf_course"]${a};relation["leisure"="golf_course"]${a};way["natural"="wood"]${a};way["landuse"="forest"]${a};);out geom;`;
   let last;
-  for (const url of OVERPASS) {
+  for (const url of [...OVERPASS, ...OVERPASS]) { // ไล่ทุกเซิร์ฟเวอร์ 2 รอบ (เซิร์ฟเวอร์ฟรีมักตอบ busy)
     try {
       const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 35000);
       const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ac.signal });
       clearTimeout(tm);
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      const d = parseOSM(await r.json()); d.center = [lat, lng]; return d;
+      const d = clipToCourse(parseOSM(await r.json()), [lat, lng]); d.center = [lat, lng]; return d;
     } catch (e) { last = e; }
   }
   throw new Error('เชื่อมต่อเซิร์ฟเวอร์แผนที่ไม่ได้ (' + (last?.message || '') + ')');
+}
+// เก็บเฉพาะของที่อยู่ในสนามที่เลือก (กันข้อมูลสนามข้างเคียงปนมา)
+function clipToCourse(d, at) {
+  const cs = d.features.filter(f => f.k === 'course');
+  if (!cs.length) return d;
+  const course = cs.find(f => pip(at, f.c)) || cs.map(f => ({ f, d: dist(at, centroid(f.c)) })).sort((a, b) => a.d - b.d)[0].f;
+  if (!pip(at, course.c) && dist(at, centroid(course.c)) > 1500) return d;
+  const inside = p => pip(p, course.c), mid = c => c[Math.floor(c.length / 2)];
+  const features = d.features.filter(f => f === course || (f.k !== 'course' && (f.line ? inside(mid(f.c)) || inside(f.c[0]) : inside(centroid(f.c)))));
+  const holes = {}; Object.entries(d.holes).forEach(([h, x]) => { if (inside(x.green) || inside(x.tee)) holes[h] = x; });
+  return { ...d, name: course.name || d.name, holes, features, outline: course.c };
 }
 // ค้นหาสนามกอล์ฟจากชื่อ (OpenStreetMap Nominatim)
 export async function searchCourses(q) {
@@ -56,7 +67,7 @@ export async function searchCourses(q) {
   return res.filter(r => { const k = r.osm_type + r.osm_id; if (seen.has(k)) return false; seen.add(k); return true; })
     .map(r => { const b = (r.boundingbox || []).map(Number), c = [+r.lat, +r.lon];
       const rad = b.length === 4 ? Math.max(dist(c, [b[0], b[2]]), dist(c, [b[1], b[3]])) + 250 : 1500;
-      return { name: r.name || r.display_name.split(',')[0], addr: r.display_name.split(',').slice(1, 4).join(',').trim(), lat: c[0], lng: c[1], radius: Math.min(3000, Math.max(700, rad)), golf: r.type === 'golf_course' }; })
+      return { cid: `osm-${r.osm_type}-${r.osm_id}`, name: r.name || r.display_name.split(',')[0], addr: r.display_name.split(',').slice(1, 4).join(',').trim(), lat: c[0], lng: c[1], radius: Math.min(3000, Math.max(700, rad)), golf: r.type === 'golf_course' }; })
     .sort((a, b) => b.golf - a.golf);
 }
 export function parseOSM(j) {
@@ -75,7 +86,7 @@ export function parseOSM(j) {
       : (t.golf === 'water_hazard' || t.golf === 'lateral_water_hazard' || t.natural === 'water') ? 'water' : t.golf === 'rough' ? 'rough'
       : t.leisure === 'golf_course' ? 'course' : (t.natural === 'wood' || t.landuse === 'forest') ? 'trees' : null;
     if (!k) continue;
-    if (el.type === 'way' && g.length >= 3) features.push({ k, c: g });
+    if (el.type === 'way' && g.length >= 3) features.push(k === 'course' ? { k, c: g, name: t['name:th'] || t.name || '' } : { k, c: g });
     if (el.type === 'relation') (el.members || []).filter(m => m.role === 'outer' && m.geometry).forEach(m => { const c = geo(m.geometry); if (c.length >= 3) features.push({ k, c }); });
   }
   return { name, holes, features };
@@ -86,6 +97,7 @@ export function createMap(el, ctx) {
     <div class="mtop"><div class="mbox mhole"><button data-m="prev">‹</button><div class="center" style="min-width:46px"><b id="mh" style="font-size:20px"></b><div class="muted" id="mp" style="font-size:11px"></div></div><button data-m="next">›</button></div>
       <div class="mbox mdist" id="md"></div></div>
     <div class="mside"><button data-m="loc" title="ตำแหน่งฉัน">🎯</button><button data-m="fit" title="ทั้งหลุม">⛳</button><button data-m="mode" title="ดาวเทียม/กราฟิก">🛰️</button><button data-m="menu" title="ข้อมูลสนาม">⚙️</button></div>
+    <div class="mwiz" id="mwiz" hidden></div>
     <div class="mbot"><button class="btn" data-m="shot">📍 บันทึกช็อต</button><button class="btn sec" data-m="shots" id="mshots">ช็อต</button></div>`;
   const map = L.map(el.querySelector('#map'), { zoomControl: false, maxZoom: 21, attributionControl: true, tap: true });
   map.attributionControl.setPrefix(false);
@@ -93,7 +105,7 @@ export function createMap(el, ctx) {
   const featL = L.layerGroup().addTo(map), holeL = L.layerGroup().addTo(map), shotL = L.layerGroup().addTo(map),
     peopleL = L.layerGroup().addTo(map), meL = L.layerGroup().addTo(map), tgtL = L.layerGroup().addTo(map);
   // ไม่มีเน็ต → ใช้แผนที่กราฟิก (ภาพดาวเทียมโหลดไม่ได้)
-  let geo = ctx.geo() || { holes: {}, features: [] }, satOn = navigator.onLine ? ctx.pref('sat', true) : false, setMode = null, target = null, lastHole = -1;
+  let geo = ctx.geo() || { holes: {}, features: [] }, satOn = navigator.onLine ? ctx.pref('sat', true) : false, setMode = null, target = null, lastHole = -1, wiz = null;
   if (satOn) sat.addTo(map);
   map.setView([13.75, 100.5], 6);
   const U = () => ctx.unit(), fmt = m => m == null ? '–' : Math.round(U() === 'y' ? m * 1.09361 : m), un = () => U() === 'y' ? 'หลา' : 'ม.';
@@ -186,12 +198,49 @@ export function createMap(el, ctx) {
     L.circleMarker(target, { radius: 9, color: '#fff', weight: 3, fillColor: '#e53935', fillOpacity: 1, interactive: false }).addTo(tgtL);
     L.marker(target, { icon: lbl(`${a != null ? fmt(a) : '–'}${b != null ? ' → ' + fmt(b) : ''} ${un()}`, 'w'), interactive: false }).addTo(tgtL);
   }
+  /* ---------- ตั้งค่าหลุมเอง: แตะแท่นที → แตะกรีน ทีละหลุม ---------- */
+  const wizEl = el.querySelector('#mwiz');
+  function setPoint(i, m, p) { const g2 = JSON.parse(JSON.stringify(geo || { holes: {}, features: [] })); g2.holes = g2.holes || {}; g2.holes[hk(i)] = { ...(g2.holes[hk(i)] || {}), [m]: p }; delete g2.holes[hk(i)].line; geo = g2; ctx.saveGeo(g2); }
+  function wizShow() {
+    el.classList.toggle('wiz', !!wiz);
+    if (!wiz) { wizEl.hidden = true; return; }
+    const i = wiz.i, h = hg(i), G = ctx.G();
+    wizEl.hidden = false;
+    wizEl.innerHTML = `<div><b>🛠 หลุม ${i + 1} / ${ctx.N()}</b> · Par ${par(G, i)}<br><span style="font-size:17px">${wiz.step === 'tee' ? '👆 แตะที่ <b>แท่นที</b>' : '👆 แตะที่ <b>กลางกรีน</b>'}</span>
+      <div class="muted">ซูม/เลื่อนแผนที่หาหลุมได้ก่อนแตะ${h.tee && h.green ? ' · หลุมนี้ตั้งไว้แล้ว แตะใหม่เพื่อแก้' : ''}</div></div>
+      <div class="grid3" style="margin-top:6px"><button class="btn sec" data-m="wback">‹ ย้อน</button><button class="btn sec" data-m="wskip">ข้าม ›</button><button class="btn" data-m="wdone">เสร็จ</button></div>`;
+  }
+  function wizGo(i, step = 'tee') {
+    const N = ctx.N(); if (i >= N) { wizEnd(true); return; } if (i < 0) i = 0;
+    wiz = { i, step }; ctx.setHole(i); const h = hg(i);
+    if (h.tee && h.green) map.fitBounds(L.latLngBounds([h.tee, h.green]), { padding: [90, 90], maxZoom: 18 });
+    else { const prev = hg(i - 1); if (prev.green) map.setView(prev.green, Math.max(map.getZoom(), 17)); }
+    wizShow();
+  }
+  function wizStart() {
+    satOn = true; ctx.setPref('sat', true); sat.addTo(map); drawFeatures();
+    if (geo.outline) map.fitBounds(L.latLngBounds(geo.outline), { padding: [20, 20] });
+    const first = [...Array(ctx.N()).keys()].find(i => !(hg(i).tee && hg(i).green)) ?? 0;
+    wizGo(first);
+    ctx.info('🛠 ตั้งค่าหลุมเอง', 'ทำครั้งเดียว ใช้ได้ทั้งแก๊งและรอบหน้า (ประมาณ 5 นาที)<br><br>1. ซูมภาพดาวเทียมหาหลุมนั้น<br>2. แตะที่<b>แท่นที</b><br>3. แตะที่<b>กลางกรีน</b><br>4. แอปไปหลุมถัดไปให้เอง<br><br><span class="muted">ดูลำดับหลุมได้จากป้ายในสนาม หรือแผนผังสนามใน Garmin</span>');
+  }
+  function wizEnd(all) {
+    wiz = null; wizShow();
+    const n = Object.values(geo.holes || {}).filter(h => h.tee && h.green).length;
+    ctx.saveCourseGeo(geo); drawHole(true);
+    ctx.toast(`${all ? 'ครบแล้ว! ' : ''}ตั้งค่าแล้ว ${n} หลุม ✓ บันทึกเป็นแผนที่สนามไว้ใช้รอบหน้า`);
+  }
   map.on('click', async e => {
     const p = [+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)];
+    if (wiz) {
+      setPoint(wiz.i, wiz.step, p);
+      if (wiz.step === 'tee') { wiz.step = 'green'; drawHole(false); wizShow(); }
+      else { drawFeatures(); wizGo(wiz.i + 1); }
+      return;
+    }
     if (setMode) {
       const i = ctx.hole(), m = setMode; setMode = null; el.querySelector('#map').style.cursor = '';
-      const g2 = JSON.parse(JSON.stringify(geo || { holes: {}, features: [] })); g2.holes = g2.holes || {}; g2.holes[hk(i)] = { ...(g2.holes[hk(i)] || {}), [m]: p };
-      ctx.saveGeo(g2);
+      setPoint(i, m, p); drawHole(false);
       ctx.toast(m === 'tee' ? `ปักแท่นทีหลุม ${i + 1} แล้ว` : `ปักกรีนหลุม ${i + 1} แล้ว`); return;
     }
     target = p; drawTarget();
@@ -202,6 +251,9 @@ export function createMap(el, ctx) {
     if (m === 'prev' && i > 0) ctx.setHole(i - 1);
     if (m === 'next' && i < N - 1) ctx.setHole(i + 1);
     if (m === 'fit') drawHole(true);
+    if (m === 'wback' && wiz) wizGo(wiz.step === 'green' ? wiz.i : wiz.i - 1);
+    if (m === 'wskip' && wiz) wizGo(wiz.i + 1);
+    if (m === 'wdone' && wiz) wizEnd(false);
     if (m === 'loc') { const g = ctx.gps(); if (g) map.setView([g.lat, g.lng], 18); else ctx.toast('ยังไม่ได้ตำแหน่ง GPS (อนุญาตตำแหน่งให้ Safari ด้วย)'); }
     if (m === 'mode') { satOn = !satOn; ctx.setPref('sat', satOn); if (satOn) sat.addTo(map); else map.removeLayer(sat); drawFeatures(); ctx.toast(satOn ? '🛰️ ภาพดาวเทียม' : '🎨 แบบกราฟิก'); }
     if (m === 'shot') {
@@ -220,11 +272,12 @@ export function createMap(el, ctx) {
   });
   async function menu() {
     const r = await ctx.choose('แผนที่สนาม', [
-      ['search', '🔎 ค้นหาสนามจากชื่อ แล้วดาวน์โหลด'], ['osm', '📍 ดาวน์โหลดสนามตรงที่แผนที่อยู่ / ตำแหน่งฉัน'],
+      ['search', '🔎 ค้นหาสนามจากชื่อ แล้วดาวน์โหลด'], ['wiz', '🛠 ตั้งค่าหลุมเอง (แตะแท่นที → กรีน ทีละหลุม)'], ['osm', '📍 ดาวน์โหลดสนามตรงที่แผนที่อยู่ / ตำแหน่งฉัน'],
       ['tee', `🅃 ปักแท่นทีหลุม ${ctx.hole() + 1}`], ['green', `⛳ ปักกรีนหลุม ${ctx.hole() + 1}`], ['clear', '🗑 ล้างแผนที่สนามของแก๊งนี้']]);
     if (r === 'tee' || r === 'green') { setMode = r; ctx.toast(r === 'tee' ? 'แตะบนแผนที่ตรงแท่นที' : 'แตะบนแผนที่ตรงกลางกรีน'); }
     if (r === 'clear' && await ctx.ask('ล้างข้อมูลแผนที่สนามของแก๊งนี้?')) ctx.saveGeo(null);
     if (r === 'search') ctx.searchDownload();
+    if (r === 'wiz') wizStart();
     if (r === 'osm') {
       const g = ctx.gps(), c = map.getCenter();
       const at = map.getZoom() >= 14 ? [c.lat, c.lng] : g ? [g.lat, g.lng] : null;
@@ -237,6 +290,7 @@ export function createMap(el, ctx) {
     update(holeChanged) { drawHole(holeChanged); },
     gps() { drawMe(); drawDist(); drawTarget(); },
     people() { drawPeople(); },
+    wizard() { wizStart(); },
     destroy() { map.remove(); },
     setGeo(v) { const had = !!hg(ctx.hole()).green; geo = v || { holes: {}, features: [] }; drawFeatures(); drawHole(!had); },
     geo: () => geo,
