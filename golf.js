@@ -29,6 +29,8 @@ export function label(sc, p) {
 export function fd(d) { if (d == null || isNaN(d)) return '-'; const r = Math.round(d * 10) / 10; return r === 0 ? 'E' : (r > 0 ? '+' : '') + r; }
 export function pc(a, b) { return b ? Math.round(a / b * 100) + '%' : '-'; }
 export function av(a, b, dp = 1) { return b ? (a / b).toFixed(dp) : '-'; }
+// เปิด/ปิดกินตัง (ค่าเริ่มต้น: เปิด)
+export function moneyOn(G) { return G.meta?.money !== false; }
 export function amounts(G) { const a = G.meta?.amounts || [30, 20, 10]; return [0, 1, 2].map(k => +a[k] || 0); }
 
 function hsh(s) { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
@@ -49,7 +51,7 @@ export function makePicks(n) {
 }
 // เงินของหลุม: picks[k] = อันดับที่สุ่มได้ครั้งที่ k → จ่าย amounts[k] (คนเดียวโดนหลายครั้ง จ่ายยอดสูงสุดครั้งเดียว)
 export function holeMoney(G, i) {
-  const res = { pay: {}, hits: [], done: holeDone(G, i), picks: G.draws?.[hk(i)]?.picks || null };
+  const res = { pay: {}, hits: [], done: holeDone(G, i), picks: moneyOn(G) ? G.draws?.[hk(i)]?.picks || null : null };
   if (!res.done || !res.picks) return res;
   const ord = holeOrder(G, i), am = amounts(G);
   res.picks.forEach((r, k) => {
