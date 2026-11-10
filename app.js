@@ -2,9 +2,9 @@ import { FIREBASE_CONFIG } from './config.js';
 import { makeStore } from './store.js';
 import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
-import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon } from './map.js';
+import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.2.0';
+const APPVER = '2.3.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -139,7 +139,12 @@ async function route() {
   flushOutbox();
   unsub = ST.on('games/' + CODE, g => onGame(g));
   locUnsub = ST.on('locs/' + CODE, v => { LOCS = v || {}; if (mapObj) mapObj.people(); updateLiveMap(); });
-  geoUnsub = ST.on('geos/' + CODE, v => { geoCache = v; const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); });
+  geoCache = jget(DEV, 'golf2_geo_' + CODE, null); geoChanged();
+  geoUnsub = ST.on('geos/' + CODE, v => {
+    const pend = jget(DEV, 'golf2_geop_' + CODE, 0);
+    if (pend && geoCache && (v?.t || 0) < (geoCache.t || 0)) { ST.set('geos/' + CODE, geoCache).then(() => jset(DEV, 'golf2_geop_' + CODE, 0)); return; } // ของในเครื่องใหม่กว่า → ส่งขึ้น
+    geoCache = v; jset(DEV, 'golf2_geo_' + CODE, v); geoChanged();
+  });
 }
 function onGame(g) {
   if (!g || !g.meta) { UI.view = 'notfound'; render(); return; }
@@ -202,7 +207,49 @@ function sendLoc(force) {
 }
 setInterval(() => sendLoc(), 10000);
 function stopGps() { if (gpsWatch != null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; } }
-let geoCache = null, geoUnsub = null; // ข้อมูลสนามสำหรับระยะในหน้าจดสกอร์
+let geoCache = null, geoUnsub = null; // แผนที่สนามของแก๊ง (เก็บในเครื่องด้วย ใช้ได้ตอนไม่มีเน็ต)
+function geoChanged() { const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); if (mapObj) mapObj.setGeo(geoCache); updateLiveMap(); if (UI.view === 'game' && UI.tab === 'gang') refresh(); }
+function saveGeo(g) {
+  if (g) g.t = Date.now();
+  geoCache = g; jset(DEV, 'golf2_geo_' + CODE, g); jset(DEV, 'golf2_geop_' + CODE, 1); geoChanged();
+  const code = CODE; ST.set('geos/' + code, g).then(() => { if (CODE === code) jset(DEV, 'golf2_geop_' + code, 0); }).catch(() => {});
+}
+const geoStat = g => { const nh = Object.values(g?.holes || {}).filter(h => h.green).length, nf = (g?.features || []).length; return { nh, nf, ok: nh > 0 || nf > 0 }; };
+
+/* ---------- ค้นหา / ดาวน์โหลดแผนที่สนาม ---------- */
+function courseSearchDialog(initial) { return new Promise(res => {
+  const d = dlg(`<p><b>🔎 ค้นหาสนามกอล์ฟ</b></p><div style="display:flex;gap:6px"><input id="cs_q" value="${esc(initial || '')}" placeholder="เช่น ปัญญาอินทรา, Alpine"><button class="btn" id="cs_go" style="flex:none">ค้นหา</button></div>
+    <div id="cs_res" style="text-align:left;margin-top:10px"></div><button class="btn red full" data-x="1">ยกเลิก</button>`);
+  let results = [];
+  const run = async () => { const q = d.querySelector('#cs_q').value.trim(); if (!q) return; const box = d.querySelector('#cs_res');
+    box.innerHTML = '<p class="muted center">กำลังค้นหา...</p>';
+    try { results = await searchCourses(q); } catch (e) { box.innerHTML = '<p class="muted center">ค้นหาไม่ได้ ต้องมีอินเทอร์เน็ต</p>'; return; }
+    box.innerHTML = results.length ? results.map((r, k) => `<button class="btn sec full" style="text-align:left" data-k="${k}">${r.golf ? '⛳' : '📍'} <b>${esc(r.name)}</b><br><span class="muted">${esc(r.addr)}</span></button>`).join('')
+      : '<p class="muted center">ไม่พบ ลองพิมพ์ชื่อภาษาอังกฤษหรือไทยแบบอื่น</p>'; };
+  d.querySelector('#cs_go').onclick = run; d.querySelector('#cs_q').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+  d.addEventListener('click', e => { const b = e.target.closest('[data-k],[data-x]'); if (!b) return; d.remove(); res(b.dataset.x ? null : results[+b.dataset.k]); });
+  if (initial) run(); else setTimeout(() => d.querySelector('#cs_q').focus(), 50);
+}); }
+async function fetchCourse(at) {
+  const w = dlg(`<p><b>⬇️ กำลังดาวน์โหลดแผนที่สนาม...</b></p><div class="dice">⛳</div><p class="muted">${esc(at.name || '')}</p>`);
+  try { const d = await importOSM(at.lat, at.lng, at.radius || 2000); w.remove(); if (at.name && !d.name) d.name = at.name; return d; }
+  catch (e) { w.remove(); info('ดาวน์โหลดไม่สำเร็จ', 'ต้องมีอินเทอร์เน็ต ลองใหม่อีกครั้ง<br><span class="muted">' + esc(e.message) + '</span>'); return null; }
+}
+function courseReport(d) {
+  const nh = Object.keys(d.holes).length, nf = d.features.filter(f => !f.line).length;
+  if (!nh && !nf) return { ok: false, html: 'OpenStreetMap ยังไม่มีข้อมูลสนามนี้<br>ปักแท่นที/กรีนเองได้ที่แท็บ 🗺️ แผนที่ → ⚙️ (ปักครั้งเดียว ใช้ได้ทั้งแก๊ง)' };
+  return { ok: true, html: `${d.name ? '<b>' + esc(d.name) + '</b><br>' : ''}✅ ข้อมูลหลุม <b>${nh}</b> หลุม · รูปทรงกรีน/แฟร์เวย์/บังเกอร์/น้ำ <b>${nf}</b> ชิ้น<br>📱 เก็บไว้ในเครื่องแล้ว ใช้ได้แม้ไม่มีเน็ต${nh < 18 ? `<br><span class="muted">หลุมที่ไม่มีข้อมูล (${18 - nh} หลุม) ปักแท่นที/กรีนเองได้ในแท็บแผนที่</span>` : ''}` };
+}
+// ดาวน์โหลดเข้าแก๊งปัจจุบัน + เก็บเป็นแผนที่สนามไว้ใช้รอบหน้า
+async function downloadIntoGame(at) {
+  const d = await fetchCourse(at); if (!d) return;
+  const rep = courseReport(d); if (!rep.ok) { info('ไม่พบข้อมูลสนาม', rep.html); return; }
+  saveGeo({ holes: { ...(geoCache?.holes || {}), ...d.holes }, features: d.features.length ? d.features : (geoCache?.features || []), center: d.center });
+  Object.entries(d.holes).forEach(([h, x]) => { if (x.par) gw(`holes/${h}/par`, x.par); if (x.si) gw(`holes/${h}/si`, x.si); });
+  if (!G.meta.course && (d.name || at.name)) gw('meta/course', d.name || at.name);
+  info('ดาวน์โหลดแผนที่แล้ว ✓', rep.html);
+}
+async function searchDownload() { const r = await courseSearchDialog(G?.meta?.course || ''); if (r) downloadIntoGame(r); }
 function gpsLine() {
   const h = geoCache?.holes?.[hk(UI.cur)];
   if (!h?.green) return `<span class="muted">ยังไม่มีข้อมูลกรีนหลุมนี้ (ตั้งได้ในแท็บแผนที่)</span>`;
@@ -272,7 +319,9 @@ function rCreate() {
   const cs = Object.values(UI.courses || {});
   $app.innerHTML = `
   <div class="card"><h2>🏌️ สร้างแก๊งใหม่</h2>
-    <label class="lb">สนาม</label><input id="c_course" list="clist" placeholder="ชื่อสนาม"><datalist id="clist">${cs.map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
+    <label class="lb">สนาม</label><input id="c_course" list="clist" placeholder="ชื่อสนาม" value="${esc(UI.pendGeo?.name || '')}"><datalist id="clist">${cs.map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
+    <button class="btn sec full" data-act="csearch">🔎 ค้นหาสนาม & ดาวน์โหลดแผนที่</button>
+    <div id="c_geo">${UI.pendGeo ? `<div class="note ok">🗺️ ${courseReport(UI.pendGeo.d).html}</div>` : ''}</div>
     <div class="grid2"><div><label class="lb">วันที่</label><input id="c_date" type="date" value="${today()}"></div><div><label class="lb">Tee</label><input id="c_tee" placeholder="เช่น Blue"></div></div>
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
@@ -296,9 +345,13 @@ async function doCreate() {
     pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), host: UID, lunch: '', createdAt: Date.now() };
   const pid = 'p' + Date.now().toString(36);
   const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true } }, holes: {} };
-  for (let i = 0; i < 18; i++) game.holes[hk(i)] = { par: lib?.pars?.[hk(i)] || 4, si: lib?.si?.[hk(i)] || '' };
+  const pg = UI.pendGeo?.d;
+  for (let i = 0; i < 18; i++) game.holes[hk(i)] = { par: pg?.holes?.[hk(i)]?.par || lib?.pars?.[hk(i)] || 4, si: pg?.holes?.[hk(i)]?.si || lib?.si?.[hk(i)] || '' };
   await ST.set('games/' + code, game);
-  if (cid) { const cg = await ST.get('coursegeo/' + cid).catch(() => null); if (cg) await ST.set('geos/' + code, cg); }
+  let cg = pg ? { holes: pg.holes, features: pg.features, center: pg.center, t: Date.now() } : null;
+  if (!cg && cid) cg = await withTimeout(ST.get('coursegeo/' + cid), 8000).catch(() => null);
+  if (cg) { jset(DEV, 'golf2_geo_' + code, cg); await ST.set('geos/' + code, cg); if (pg && cid) ST.set('coursegeo/' + cid, cg).catch(() => {}); }
+  UI.pendGeo = null;
   setId(code, { pid }); jset(DEV, 'golf2_pin_' + code, pin); addMyGame({ code, name: course || 'รอบกอล์ฟ', date: meta.date });
   UI.tab = 'gang'; jset(DEV, 'golf2_tab', 'gang'); go(code);
 }
@@ -409,12 +462,7 @@ function rMap() {
     saveShot: (i, s) => { gw(`shots/${ME}/${hk(i)}/s${s.t}`, s); sendLoc(true); },
     locs: () => LOCS,
     delShot: (i, k) => gw(`shots/${ME}/${hk(i)}/${k}`, null),
-    applyCourse: d => {
-      const up = {};
-      Object.entries(d.holes).forEach(([h, x]) => { if (x.par) up[`holes/${h}/par`] = x.par; if (x.si) up[`holes/${h}/si`] = x.si; });
-      if (d.name && !G.meta.course) up['meta/course'] = d.name;
-      if (Object.keys(up).length) ST.update('games/' + CODE, up);
-    },
+    geo: () => geoCache, saveGeo, searchDownload, downloadAt: at => downloadIntoGame(at),
   });
 }
 
@@ -568,6 +616,11 @@ function rGang() {
       <input ${host || p.id === ME ? '' : 'disabled'} type="number" inputmode="numeric" data-phc="${p.id}" value="${esc(p.hc)}" placeholder="แต้ม" style="width:64px;text-align:center">
       ${host && p.id !== ME ? `<button class="x" data-act="kick" data-v="${p.id}">✕</button>` : ''}</div>`).join('')}
     ${host ? `<div style="display:flex;gap:8px;margin-top:8px"><input id="addname" placeholder="เพิ่มชื่อเพื่อนล่วงหน้า"><button class="btn" data-act="addp" style="flex:none">เพิ่ม</button></div><p class="muted">เพิ่มชื่อไว้ก่อนได้ เพื่อนสแกนแล้วแตะชื่อตัวเอง · คนสร้างแก๊งจดแทนเพื่อนได้ในแท็บจดสกอร์</p>` : ''}</div>
+  <div class="card"><h2>🗺️ แผนที่สนาม</h2>
+    ${(() => { const st = geoStat(geoCache); return st.ok ? `<div class="note ok">✅ มีแผนที่แล้ว: ข้อมูลกรีน <b>${st.nh}</b> หลุม · รูปทรง <b>${st.nf}</b> ชิ้น<br>📱 เก็บไว้ในเครื่องนี้แล้ว ใช้ได้แม้ไม่มีเน็ต</div>` : '<div class="note">ยังไม่มีแผนที่สนาม ดาวน์โหลดไว้ก่อนออกรอบ (ตอนมี Wi-Fi) จะดูระยะได้แม้สัญญาณไม่ดี</div>'; })()}
+    <button class="btn full" data-act="gsearch">🔎 ค้นหาสนามจากชื่อ & ดาวน์โหลด</button>
+    <div class="grid2"><button class="btn sec" data-act="ghere">📍 ใช้ตำแหน่งฉัน</button><button class="btn sec" data-act="tab" data-v="map">🗺️ เปิดแผนที่</button></div>
+    <p class="muted">ข้อมูลจาก OpenStreetMap · ภาพดาวเทียมจะถูกเก็บในเครื่องเฉพาะส่วนที่เคยเปิดดู (เปิดดูทุกหลุมตอนมี Wi-Fi ไว้ก่อนได้)</p></div>
   <div class="card"><h2>⚙️ ตั้งค่ารอบ ${host ? '' : '<span class="muted">(แก้ได้เฉพาะคนสร้างแก๊ง)</span>'}</h2>
     <label class="lb">สนาม</label>${inp('course', m.course, 'ชื่อสนาม')}
     <div class="grid2"><div><label class="lb">วันที่</label>${inp('date', m.date, '', 'date')}</div><div><label class="lb">Tee</label>${inp('tee', m.tee, 'เช่น Blue')}</div></div>
@@ -663,7 +716,7 @@ document.addEventListener('click', async e => {
     case 'wake': setPref('wake', !PREF.wake); keepAwake(); toast(PREF.wake ? '💡 กันจอดับ: เปิด' : 'กันจอดับ: ปิด'); render(); return;
     case 'home': go(null); return;
     case 'retry': route(); return;
-    case 'create': UI.view = 'create'; render(); return;
+    case 'create': UI.view = 'create'; UI.pendGeo = null; render(); return;
     case 'docreate': t.disabled = true; try { await doCreate(); } catch (er) { toast('สร้างไม่สำเร็จ: ' + er.message); t.disabled = false; } return;
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
@@ -686,6 +739,13 @@ document.addEventListener('click', async e => {
     case 'tee': { const e0 = { on: null, putt: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0.tee = e0.tee === v ? null : v; writeEntry(pid, i, e0); return; }
     case 'pen': { const e0 = { on: null, putt: null, tee: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0[v] = ((e0[v] || 0) + 1) % 4; writeEntry(pid, i, e0); return; }
     case 'sortBy': UI.sortBy = v; render(); return;
+    case 'gsearch': searchDownload(); return;
+    case 'ghere': if (!gps) { toast('ยังไม่ได้ตำแหน่ง GPS · อนุญาตตำแหน่งให้ Safari/Chrome แล้วลองใหม่'); startGps(); return; } downloadIntoGame({ lat: gps.lat, lng: gps.lng, radius: 2000 }); return;
+    case 'csearch': { const q = document.getElementById('c_course').value.trim(); const r = await courseSearchDialog(q); if (!r) return;
+      const d = await fetchCourse(r); if (!d) return; const rep = courseReport(d);
+      if (!rep.ok) { info('ไม่พบข้อมูลสนาม', rep.html); return; }
+      UI.pendGeo = { d, name: q || r.name }; const inp = document.getElementById('c_course'); if (!inp.value.trim()) inp.value = r.name;
+      document.getElementById('c_geo').innerHTML = `<div class="note ok">🗺️ ${rep.html}</div>`; return; }
     case 'shot': addShot(pid, i); return;
     case 'delshot': { const sh = shotsOf(pid, i).find(x => x.k === v); if (sh && await ask(`ลบช็อต ${sh.club}?`)) gw(`shots/${pid}/${hk(i)}/${v}`, null); return; }
     case 'fitlive': updateLiveMap(true); return;

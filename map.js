@@ -4,14 +4,18 @@ const L = window.L;
 export const SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STY = {
+  course: { color: '#2e6b2b', weight: 1, fillColor: '#4f8f4c', fillOpacity: .9 },
   rough: { color: '#33691e', weight: 0, fillColor: '#558b2f', fillOpacity: .35 },
+  trees: { color: '#1e4d1c', weight: 0, fillColor: '#2a5f27', fillOpacity: .9 },
   fairway: { color: '#7cb342', weight: 1, fillColor: '#8bc34a', fillOpacity: .7 },
   tee: { color: '#689f38', weight: 1, fillColor: '#aed581', fillOpacity: .85 },
   water: { color: '#0277bd', weight: 1, fillColor: '#29b6f6', fillOpacity: .85 },
   bunker: { color: '#c9a95c', weight: 1, fillColor: '#f3e2ad', fillOpacity: .95 },
   green: { color: '#1b5e20', weight: 1.5, fillColor: '#43a047', fillOpacity: .9 },
 };
-const ORDER = ['rough', 'fairway', 'tee', 'water', 'bunker', 'green'];
+const ORDER = ['course', 'rough', 'trees', 'fairway', 'tee', 'water', 'bunker', 'green', 'path'];
+// เซิร์ฟเวอร์ Overpass (ตัวหลัก + สำรอง ถ้าตัวไหนล่มจะลองตัวถัดไปเอง)
+const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
 // ไม้กอล์ฟ: กลุ่มหลัก (กดครั้งเดียว) + ระบุเบอร์ได้ถ้าต้องการ
 export const CLUB_MAIN = [['D', 'Driver'], ['FW', 'แฟร์เวย์วู้ด'], ['HY', 'ไฮบริด'], ['Iron', 'เหล็ก'], ['Wedge', 'เวดจ์'], ['Putter', 'พัตเตอร์']];
 export const CLUB_SUB = { FW: ['3W', '4W', '5W', '7W', '9W'], HY: ['2H', '3H', '4H', '5H', '6H'], Iron: ['2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i'],
@@ -28,11 +32,32 @@ function centroid(poly) { let a = 0, b = 0; poly.forEach(p => { a += p[0]; b += 
 const icon = (html, cls = '') => L.divIcon({ html: `<div class="${cls}">${html}</div>`, className: '', iconSize: null });
 const lbl = (t, cls = '') => L.divIcon({ html: `<span class="mlbl ${cls}">${t}</span>`, className: '', iconAnchor: [-6, 10] });
 
-export async function importOSM(lat, lng) {
-  const q = `[out:json][timeout:30];(way["golf"](around:2000,${lat},${lng});relation["golf"](around:2000,${lat},${lng});way["natural"="water"](around:2000,${lat},${lng});way["leisure"="golf_course"](around:2000,${lat},${lng}););out geom;`;
-  const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!r.ok) throw new Error('Overpass ' + r.status);
-  return parseOSM(await r.json());
+export async function importOSM(lat, lng, radius = 2000) {
+  const a = `(around:${Math.round(radius)},${lat},${lng})`;
+  const q = `[out:json][timeout:40];(way["golf"]${a};relation["golf"]${a};way["natural"="water"]${a};way["leisure"="golf_course"]${a};relation["leisure"="golf_course"]${a};way["natural"="wood"]${a};way["landuse"="forest"]${a};);out geom;`;
+  let last;
+  for (const url of OVERPASS) {
+    try {
+      const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 35000);
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ac.signal });
+      clearTimeout(tm);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = parseOSM(await r.json()); d.center = [lat, lng]; return d;
+    } catch (e) { last = e; }
+  }
+  throw new Error('เชื่อมต่อเซิร์ฟเวอร์แผนที่ไม่ได้ (' + (last?.message || '') + ')');
+}
+// ค้นหาสนามกอล์ฟจากชื่อ (OpenStreetMap Nominatim)
+export async function searchCourses(q) {
+  const go = async s => { const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(s)}&countrycodes=th&format=jsonv2&limit=8&accept-language=th,en`); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+  let res = await go(q);
+  if (!res.some(r => r.type === 'golf_course') && !/golf|กอล์ฟ/i.test(q)) res = [...(await go(q + ' golf')), ...res];
+  const seen = new Set();
+  return res.filter(r => { const k = r.osm_type + r.osm_id; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map(r => { const b = (r.boundingbox || []).map(Number), c = [+r.lat, +r.lon];
+      const rad = b.length === 4 ? Math.max(dist(c, [b[0], b[2]]), dist(c, [b[1], b[3]])) + 250 : 1500;
+      return { name: r.name || r.display_name.split(',')[0], addr: r.display_name.split(',').slice(1, 4).join(',').trim(), lat: c[0], lng: c[1], radius: Math.min(3000, Math.max(700, rad)), golf: r.type === 'golf_course' }; })
+    .sort((a, b) => b.golf - a.golf);
 }
 export function parseOSM(j) {
   const holes = {}, features = []; let name = '';
@@ -45,8 +70,10 @@ export function parseOSM(j) {
       if (n >= 1 && n <= 18) holes[hk(n - 1)] = { tee: g[0], green: g[g.length - 1], line: g, par: +t.par || null, si: +t.handicap || null };
       continue;
     }
+    if ((t.golf === 'cartpath' || t.golf === 'path') && g.length >= 2) { features.push({ k: 'path', c: g, line: 1 }); continue; }
     const k = t.golf === 'green' ? 'green' : t.golf === 'bunker' ? 'bunker' : t.golf === 'fairway' ? 'fairway' : t.golf === 'tee' ? 'tee'
-      : (t.golf === 'water_hazard' || t.golf === 'lateral_water_hazard' || t.natural === 'water') ? 'water' : t.golf === 'rough' ? 'rough' : null;
+      : (t.golf === 'water_hazard' || t.golf === 'lateral_water_hazard' || t.natural === 'water') ? 'water' : t.golf === 'rough' ? 'rough'
+      : t.leisure === 'golf_course' ? 'course' : (t.natural === 'wood' || t.landuse === 'forest') ? 'trees' : null;
     if (!k) continue;
     if (el.type === 'way' && g.length >= 3) features.push({ k, c: g });
     if (el.type === 'relation') (el.members || []).filter(m => m.role === 'outer' && m.geometry).forEach(m => { const c = geo(m.geometry); if (c.length >= 3) features.push({ k, c }); });
@@ -65,12 +92,13 @@ export function createMap(el, ctx) {
   const sat = L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21, attribution: 'Imagery © Esri, Maxar · Course © OpenStreetMap' });
   const featL = L.layerGroup().addTo(map), holeL = L.layerGroup().addTo(map), shotL = L.layerGroup().addTo(map),
     peopleL = L.layerGroup().addTo(map), meL = L.layerGroup().addTo(map), tgtL = L.layerGroup().addTo(map);
-  let geo = null, satOn = ctx.pref('sat', true), setMode = null, target = null, lastHole = -1, unsubGeo = null;
+  // ไม่มีเน็ต → ใช้แผนที่กราฟิก (ภาพดาวเทียมโหลดไม่ได้)
+  let geo = ctx.geo() || { holes: {}, features: [] }, satOn = navigator.onLine ? ctx.pref('sat', true) : false, setMode = null, target = null, lastHole = -1;
   if (satOn) sat.addTo(map);
   map.setView([13.75, 100.5], 6);
   const U = () => ctx.unit(), fmt = m => m == null ? '–' : Math.round(U() === 'y' ? m * 1.09361 : m), un = () => U() === 'y' ? 'หลา' : 'ม.';
 
-  unsubGeo = ctx.store.on('geos/' + ctx.code, v => { geo = v || { holes: {}, features: [] }; drawFeatures(); drawHole(true); });
+  setTimeout(() => { drawFeatures(); drawHole(true); }, 0);
 
   function hg(i) { return geo?.holes?.[hk(i)] || {}; }
   function greenPoly(i) {
@@ -82,10 +110,15 @@ export function createMap(el, ctx) {
     featL.clearLayers();
     const fo = satOn ? .45 : 1;
     [...(geo?.features || [])].sort((a, b) => ORDER.indexOf(a.k) - ORDER.indexOf(b.k)).forEach(f => {
-      const s = { ...STY[f.k] }; s.fillOpacity = Math.min(1, s.fillOpacity * fo); if (satOn && f.k === 'rough') return;
+      if (satOn && ['rough', 'course', 'trees'].includes(f.k)) return;
+      if (f.line) { L.polyline(f.c, { color: satOn ? '#eee' : '#d7d2c4', weight: 3, opacity: satOn ? .5 : .9, dashArray: satOn ? '4 6' : null, interactive: false }).addTo(featL); return; }
+      const s = { ...STY[f.k] }; s.fillOpacity = Math.min(1, s.fillOpacity * fo);
       L.polygon(f.c, { ...s, interactive: false }).addTo(featL);
     });
-    el.querySelector('#map').style.background = satOn ? '#333' : '#4f8f4c';
+    // เลขหลุมที่กรีนทุกหลุม
+    Object.entries(geo?.holes || {}).forEach(([h, x]) => { const n = +h.slice(1); if (!x.green || n >= ctx.N()) return;
+      L.marker(x.green, { interactive: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: `<span class="hnum">${n + 1}</span>` }) }).addTo(featL); });
+    el.querySelector('#map').style.background = satOn ? '#333' : '#3d7a3a';
   }
   function from() {
     const i = ctx.hole(), g = ctx.gps(), h = hg(i);
@@ -157,7 +190,8 @@ export function createMap(el, ctx) {
     const p = [+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)];
     if (setMode) {
       const i = ctx.hole(), m = setMode; setMode = null; el.querySelector('#map').style.cursor = '';
-      await ctx.store.set(`geos/${ctx.code}/holes/${hk(i)}/${m}`, p);
+      const g2 = JSON.parse(JSON.stringify(geo || { holes: {}, features: [] })); g2.holes = g2.holes || {}; g2.holes[hk(i)] = { ...(g2.holes[hk(i)] || {}), [m]: p };
+      ctx.saveGeo(g2);
       ctx.toast(m === 'tee' ? `ปักแท่นทีหลุม ${i + 1} แล้ว` : `ปักกรีนหลุม ${i + 1} แล้ว`); return;
     }
     target = p; drawTarget();
@@ -185,23 +219,17 @@ export function createMap(el, ctx) {
     if (m === 'menu') menu();
   });
   async function menu() {
-    const r = await ctx.choose('ข้อมูลสนาม', [
-      ['osm', '⬇️ ดาวน์โหลดข้อมูลสนาม (OpenStreetMap)'], ['tee', `🅃 ปักแท่นทีหลุม ${ctx.hole() + 1}`], ['green', `⛳ ปักกรีนหลุม ${ctx.hole() + 1}`], ['clear', '🗑 ล้างข้อมูลสนามของแก๊งนี้']]);
+    const r = await ctx.choose('แผนที่สนาม', [
+      ['search', '🔎 ค้นหาสนามจากชื่อ แล้วดาวน์โหลด'], ['osm', '📍 ดาวน์โหลดสนามตรงที่แผนที่อยู่ / ตำแหน่งฉัน'],
+      ['tee', `🅃 ปักแท่นทีหลุม ${ctx.hole() + 1}`], ['green', `⛳ ปักกรีนหลุม ${ctx.hole() + 1}`], ['clear', '🗑 ล้างแผนที่สนามของแก๊งนี้']]);
     if (r === 'tee' || r === 'green') { setMode = r; ctx.toast(r === 'tee' ? 'แตะบนแผนที่ตรงแท่นที' : 'แตะบนแผนที่ตรงกลางกรีน'); }
-    if (r === 'clear' && await ctx.ask('ล้างข้อมูลแผนที่สนามของแก๊งนี้?')) await ctx.store.set('geos/' + ctx.code, null);
+    if (r === 'clear' && await ctx.ask('ล้างข้อมูลแผนที่สนามของแก๊งนี้?')) ctx.saveGeo(null);
+    if (r === 'search') ctx.searchDownload();
     if (r === 'osm') {
-      const g = ctx.gps(), c = map.getCenter(), useMap = !g || map.getZoom() >= 14;
-      const at = useMap && map.getZoom() >= 14 ? [c.lat, c.lng] : g ? [g.lat, g.lng] : null;
+      const g = ctx.gps(), c = map.getCenter();
+      const at = map.getZoom() >= 14 ? [c.lat, c.lng] : g ? [g.lat, g.lng] : null;
       if (!at) { ctx.toast('เลื่อนแผนที่ไปที่สนาม (ซูมเข้า) หรือเปิด GPS ก่อน'); return; }
-      ctx.toast('กำลังดาวน์โหลดข้อมูลสนาม...');
-      try {
-        const d = await importOSM(at[0], at[1]), nh = Object.keys(d.holes).length;
-        if (!nh && !d.features.length) { ctx.info('ไม่พบข้อมูลสนาม', 'OpenStreetMap ยังไม่มีข้อมูลสนามแถวนี้<br>ปักแท่นที/กรีนเองได้จากเมนู ⚙️ (ปักครั้งเดียว ใช้ได้ทั้งแก๊ง)'); return; }
-        const merged = { holes: { ...(geo?.holes || {}), ...d.holes }, features: d.features.length ? d.features : (geo?.features || []) };
-        await ctx.store.set('geos/' + ctx.code, merged);
-        ctx.applyCourse(d);
-        ctx.info('ดาวน์โหลดแล้ว ✓', `${d.name ? '<b>' + d.name + '</b><br>' : ''}ข้อมูลหลุม ${nh} หลุม · รูปทรงกรีน/บังเกอร์/น้ำ ${d.features.length} ชิ้น${nh < ctx.N() ? '<br><span class="muted">หลุมที่ไม่มีข้อมูล ปักแท่นที/กรีนเองได้</span>' : ''}`);
-      } catch (e) { ctx.info('ดาวน์โหลดไม่สำเร็จ', 'ต้องมีอินเทอร์เน็ต ลองใหม่อีกครั้ง<br><span class="muted">' + e.message + '</span>'); }
+      ctx.downloadAt({ lat: at[0], lng: at[1], radius: 2000 });
     }
   }
   setTimeout(() => map.invalidateSize(), 50);
@@ -209,7 +237,8 @@ export function createMap(el, ctx) {
     update(holeChanged) { drawHole(holeChanged); },
     gps() { drawMe(); drawDist(); drawTarget(); },
     people() { drawPeople(); },
-    destroy() { unsubGeo && unsubGeo(); map.remove(); },
+    destroy() { map.remove(); },
+    setGeo(v) { const had = !!hg(ctx.hole()).green; geo = v || { holes: {}, features: [] }; drawFeatures(); drawHole(!had); },
     geo: () => geo,
   };
 }
