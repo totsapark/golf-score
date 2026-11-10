@@ -301,3 +301,53 @@ export function createMap(el, ctx) {
     geo: () => geo,
   };
 }
+
+/* ---------- แผนที่การตีย้อนหลัง ----------
+   D = { N, holes:{h0:{tee,green,line}}, pars:{h0:4}, players:[{id,name,color}], shots:{pid:{h0:[{lat,lng,club,t}]}}, scores:{pid:{h0:5}}, unit }
+   st = { pid, hole }  (hole = -1 คือดูทุกหลุม) */
+export function createReplay(el, D, st, onState) {
+  const fmt = m => Math.round(D.unit === 'y' ? m * 1.09361 : m), un = D.unit === 'y' ? 'หลา' : 'ม.';
+  const sh = (pid, i) => Object.values(D.shots?.[pid]?.[hk(i)] || {}).filter(x => x && x.lat != null).sort((a, b) => a.t - b.t);
+  if (!D.players.some(p => p.id === st.pid)) st.pid = (D.players.find(p => Object.keys(D.shots?.[p.id] || {}).length) || D.players[0])?.id;
+  el.innerHTML = `<div class="chips rp-p"></div><div class="chips rp-h"></div><div class="rp-map"></div><div class="rp-list"></div>`;
+  const map = L.map(el.querySelector('.rp-map'), { zoomControl: false, maxZoom: 21 }); map.attributionControl.setPrefix(false);
+  L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21, attribution: 'Imagery © Esri' }).addTo(map);
+  const layer = L.layerGroup().addTo(map); map.setView(D.center || [13.75, 100.5], D.center ? 15 : 6);
+  const label = (t, cls = 'y') => L.divIcon({ html: `<span class="mlbl ${cls}">${t}</span>`, className: '', iconAnchor: [-6, 10] });
+  function draw() {
+    const P = D.players.find(p => p.id === st.pid) || D.players[0]; if (!P || !el.isConnected) return;
+    el.querySelector('.rp-p').innerHTML = D.players.map(p => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${p.id === P.id ? 'cur' : ''}" data-rp="p" data-v="${p.id}">${esc(p.name)}</button>`).join('');
+    let hc = `<button style="width:auto;padding:0 12px;border-radius:16px" class="${st.hole < 0 ? 'cur' : ''}" data-rp="h" data-v="-1">ทั้งหมด</button>`;
+    for (let i = 0; i < D.N; i++) hc += `<button class="${st.hole === i ? 'cur' : sh(P.id, i).length ? 'done' : ''}" data-rp="h" data-v="${i}">${i + 1}</button>`;
+    el.querySelector('.rp-h').innerHTML = hc;
+    layer.clearLayers(); const pts = [], rows = [];
+    const holes = st.hole < 0 ? [...Array(D.N).keys()] : [st.hole];
+    holes.forEach(i => {
+      const g = D.holes?.[hk(i)] || {}, s = sh(P.id, i), one = st.hole >= 0;
+      if (g.tee && one) { L.marker(g.tee, { icon: label('T', 'w'), interactive: false }).addTo(layer); pts.push(g.tee); }
+      if (g.green) { L.marker(g.green, { interactive: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: one ? '<div style="font-size:26px;transform:translate(-4px,-26px)">⛳</div>' : `<span class="hnum">${i + 1}</span>` }) }).addTo(layer); if (one || s.length) pts.push(g.green); }
+      if (!s.length) return;
+      const path = s.map(x => [x.lat, x.lng]); const last = s[s.length - 1];
+      if (g.green && last.club !== 'Putter') path.push(g.green);
+      L.polyline(path, { color: P.color || '#fdd835', weight: 3, opacity: .95, interactive: false }).addTo(layer);
+      const parts = [];
+      s.forEach((x, k) => {
+        const nx = s[k + 1], d = nx ? dist([x.lat, x.lng], [nx.lat, nx.lng]) : (g.green ? dist([x.lat, x.lng], g.green) : null);
+        const txt = nx ? `${x.club} ${fmt(d)}` : `${x.club}${d != null && x.club !== 'Putter' ? ' · เหลือ ' + fmt(d) : ''}`;
+        L.circleMarker([x.lat, x.lng], { radius: 6, color: '#fff', weight: 2, fillColor: P.color || '#fdd835', fillOpacity: 1, interactive: false }).addTo(layer);
+        if (one) L.marker([x.lat, x.lng], { icon: label(`${k + 1}. ${txt}`), interactive: false }).addTo(layer);
+        pts.push([x.lat, x.lng]); parts.push(`<b>${esc(x.club)}</b>${nx ? ' ' + fmt(d) : ''}`);
+      });
+      const sc = D.scores?.[P.id]?.[hk(i)];
+      rows.push(`<div class="rp-row"><b>H${i + 1}</b> <span class="muted">Par ${D.pars?.[hk(i)] || '-'}${sc != null ? ' · ' + sc : ''}</span><br>${parts.join(' › ')}</div>`);
+    });
+    el.querySelector('.rp-list').innerHTML = rows.join('');
+    if (pts.length) map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [30, 40], paddingBottomRight: [120, 30], maxZoom: st.hole < 0 ? 17 : 19, animate: false });
+    onState && onState(st);
+  }
+  el.addEventListener('click', e => { const b = e.target.closest('[data-rp]'); if (!b) return; e.stopPropagation();
+    if (b.dataset.rp === 'p') st.pid = b.dataset.v; else st.hole = +b.dataset.v; draw(); });
+  setTimeout(() => { if (!el.isConnected) return; map.invalidateSize(); draw(); }, 30);
+  let alive = true;
+  return { destroy() { if (!alive) return; alive = false; try { map.stop(); map.off(); map.remove(); } catch (e) {} } };
+}

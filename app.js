@@ -2,9 +2,9 @@ import { FIREBASE_CONFIG } from './config.js';
 import { makeStore } from './store.js';
 import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
-import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
+import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.5.1';
+const APPVER = '2.6.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -309,6 +309,7 @@ function hdr() {
 /* ---------- render ---------- */
 function render() {
   hdr();
+  if (replayObj) { replayObj.destroy(); replayObj = null; }
   if (UI.view !== 'game' || UI.tab !== 'map') { if (mapObj) { mapObj.destroy(); mapObj = null; } }
   const v = UI.view;
   if (v === 'loading') $app.innerHTML = '<div class="card center muted">กำลังโหลด...</div>';
@@ -320,8 +321,12 @@ function render() {
   else if (v === 'join') rJoin();
   else if (v === 'nonet') $app.innerHTML = `<div class="card center"><h2>📶 ยังเชื่อมต่อไม่ได้</h2><p class="muted">เข้าแก๊งครั้งแรกต้องใช้อินเทอร์เน็ต หลังจากนั้นเปิดได้แม้สัญญาณหาย</p><button class="btn full" data-act="retry">ลองใหม่</button><button class="btn sec full" data-act="home">กลับหน้าแรก</button></div>`;
   else if (v === 'hist') rHist();
+  else if (v === 'histrp') { const r = HIST.find(x => x.rid === UI.histRid);
+    $app.innerHTML = r ? `<div class="card"><h2>🗺️ ${esc(r.course || 'รอบกอล์ฟ')}</h2><p class="muted" style="margin-top:-6px">${thDate(r.date)}</p><div id="replay" class="replay"></div></div><button class="btn sec full" data-act="hist">‹ กลับไปประวัติ</button>` : '';
+    if (r) { UI.rp = { pid: 'p0', hole: 0 }; mountReplay(r.rp); } }
   else if (v === 'game' && G) {
     ({ hole: rHole, map: rMap, live: rLive, sum: rSum, gang: rGang })[UI.tab]();
+    if (UI.tab === 'sum') mountReplay(gameReplayData());
     startGps(); if (UI.tab === 'live') mountLiveMap();
   }
 }
@@ -579,6 +584,20 @@ function clubStats() {
   });
   return Object.entries(m).map(([c, r]) => ({ c, cat: clubCat(c), n: r.all, nd: r.d.length, avg: r.d.length ? r.d.reduce((x, y) => x + y, 0) / r.d.length : null, max: r.d.length ? Math.max(...r.d) : null }));
 }
+/* ---------- แผนที่การตีย้อนหลัง ---------- */
+let replayObj = null;
+function slimHoles(hs) { const o = {}; Object.entries(hs || {}).forEach(([h, x]) => { o[h] = { tee: x.tees?.Blue || x.tee || null, green: x.green || null, line: x.line || null }; }); return o; }
+function gameReplayData() {
+  const N = K.nHoles(G), pars = {}, scores = {};
+  for (let i = 0; i < N; i++) pars[hk(i)] = K.par(G, i);
+  K.players(G).forEach(p => { scores[p.id] = {}; for (let i = 0; i < N; i++) { const v = K.score(G, p.id, i); if (v != null) scores[p.id][hk(i)] = v; } });
+  return { N, holes: slimHoles(geoCache?.holes), pars, players: K.players(G).map(p => ({ id: p.id, name: p.name, color: p.color })), shots: G.shots || {}, scores, unit: PREF.unit, center: geoCache?.center || null };
+}
+function mountReplay(data) {
+  const el = document.getElementById('replay'); if (!el) return;
+  UI.rp = UI.rp || { pid: ME, hole: 0 };
+  replayObj = createReplay(el, { ...data, unit: PREF.unit }, UI.rp);
+}
 function rSum() {
   const hc = K.hasHC(G), list = board().map(x => ({ ...x, m: K.more(G, x.p.id) })), played = list.filter(x => x.s.n), N = K.nHoles(G), two = N == 18;
   let pot = 0; list.forEach(x => pot += x.s.money);
@@ -616,6 +635,7 @@ function rSum() {
   <div class="card"><h2>🏌️ Tee-off</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>⬅</th><th>⬆</th><th>➡</th><th>Fairway<br>Par 4-5</th><th>สกอร์เมื่อ<br>ตีตรง</th><th>เมื่อ<br>ไม่ตรง</th></tr>${teeT}</table></div></div>
   <div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2>${cl.length ? `<table><tr><th class="l">ไม้</th><th>ใช้</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b>${c.cat !== c.c ? ` <span class="muted">${c.cat}</span>` : ''}</td><td>${c.n}</td><td><b>${c.avg != null ? Math.round(c.avg * u) : '-'}</b></td><td>${c.max != null ? Math.round(c.max * u) : '-'}</td></tr>`).join('')}</table>
     ` : '<p class="muted">ยังไม่มี · กด "📍 ตีแล้ว · บันทึกช็อต" ตอนยืนที่ลูกทุกช็อต แล้วเลือกไม้ ระบบจะคำนวณระยะแต่ละไม้ให้</p>'}</div>
+  ${Object.keys(G.shots || {}).length ? '<div class="card"><h2>🗺️ แผนที่การตีย้อนหลัง</h2><div id="replay" class="replay"></div></div>' : ''}
   <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll">${scorecard()}</div></div>
   <div class="card"><h2>📤 แชร์ & บันทึก</h2>
     <button class="btn full" data-act="img">📷 ส่งรูปสกอร์การ์ด</button>
@@ -685,6 +705,9 @@ function rGang() {
 function saveRound() {
   const r = { rid: CODE, date: G.meta.date, course: G.meta.course, tee: G.meta.tee, holes: K.nHoles(G), cr: G.meta.cr, slope: G.meta.slope, par: K.totalPar(G),
     players: K.players(G).map(p => { const s = K.stats(G, p.id); return { name: p.name.trim(), gross: s.gross, net: s.net, par: s.par, n: s.n, putts: s.putts, g: s.g, money: s.money, diff: s.n === K.nHoles(G) ? s.hcp : null }; }) };
+  const d = gameReplayData(), ix = {}; d.players.forEach((p, n) => { ix[p.id] = 'p' + n; });
+  const rk = o => { const x = {}; Object.entries(o || {}).forEach(([k, v]) => { if (ix[k]) x[ix[k]] = v; }); return x; };
+  r.rp = { N: d.N, holes: d.holes, pars: d.pars, center: d.center, players: d.players.map(p => ({ id: ix[p.id], name: p.name, color: p.color })), shots: rk(d.shots), scores: rk(d.scores) };
   const k = HIST.findIndex(x => x.rid === r.rid); if (k >= 0) HIST[k] = r; else HIST.push(r);
   HIST.sort((a, b) => a.date < b.date ? -1 : 1); jset(localStorage, 'golf2_hist', HIST); toast('บันทึกลงประวัติแล้ว ✓'); render();
 }
@@ -704,7 +727,7 @@ function rHist() {
   $app.innerHTML = `
   <div class="card"><h2>🏌️ Handicap Index</h2>${ph.length ? `<table><tr><th class="l">ผู้เล่น</th><th>รอบ</th><th>HI</th></tr>${ph.map(x => `<tr><td class="l"><b>${esc(x.name)}</b></td><td>${x.rounds}</td><td class="hcp">${x.hi ?? (x.avg != null ? '~' + x.avg : '-')}</td></tr>`).join('')}</table>
     ` : '<p class="muted">ยังไม่มีประวัติ จบรอบแล้วกด "บันทึกรอบนี้ลงประวัติ" ในหน้าสรุป</p>'}</div>
-  ${[...HIST].reverse().map(r => `<div class="card"><div class="ptop"><span><b>${esc(r.course || 'รอบกอล์ฟ')}</b><br><span class="muted">${thDate(r.date)} · ${r.holes} หลุม · Par ${r.par}</span></span><button class="x" data-act="delround" data-v="${r.rid}">🗑</button></div>
+  ${[...HIST].reverse().map(r => `<div class="card"><div class="ptop"><span><b>${esc(r.course || 'รอบกอล์ฟ')}</b><br><span class="muted">${thDate(r.date)} · ${r.holes} หลุม · Par ${r.par}</span></span><span style="display:flex;gap:6px">${r.rp && Object.keys(r.rp.shots || {}).length ? `<button class="btn sec" data-act="histrp" data-v="${r.rid}">🗺️ ดูการตี</button>` : ''}<button class="x" data-act="delround" data-v="${r.rid}">🗑</button></span></div>
     <table><tr><th class="l">ผู้เล่น</th><th>Gross</th><th>Net</th><th>Diff</th><th>เสีย</th></tr>${r.players.filter(p => p.n).sort((a, b) => (a.gross - a.par) - (b.gross - b.par)).map(p => `<tr><td class="l">${esc(p.name)}</td><td><b>${p.gross}</b></td><td>${p.net}</td><td>${p.diff ?? '-'}</td><td class="pay">${p.money}฿</td></tr>`).join('')}</table></div>`).join('')}
   ${HIST.length ? '<button class="btn red full" data-act="clearhist">🗑 ลบประวัติทั้งหมด</button>' : ''}
   <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>`;
@@ -764,6 +787,7 @@ document.addEventListener('click', async e => {
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
     case 'hist': UI.view = 'hist'; render(); return;
+    case 'histrp': UI.histRid = v; UI.view = 'histrp'; render(); scrollTo(0, 0); return;
     case 'forget': { const pend = Object.keys(jget(DEV, 'golf2_outbox_' + v, {})).length;
       if (!(await ask(pend ? `แก๊ง ${v} ยังมีข้อมูลรอส่ง ${pend} รายการ ลบออกจากเครื่องนี้เลยไหม?` : `ลบแก๊ง ${v} ออกจากรายการ?`))) return;
       forgetGame(v); render(); return; }
