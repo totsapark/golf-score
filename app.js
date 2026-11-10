@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.4.0';
+const APPVER = '2.4.1';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -275,8 +275,10 @@ function gpsLine() {
   const h = geoCache?.holes?.[hk(UI.cur)];
   if (!h?.green) return `<span class="muted">ยังไม่มีข้อมูลกรีนหลุมนี้ (ตั้งได้ในแท็บแผนที่)</span>`;
   if (!gps) return `<span class="muted">รอ GPS... (อนุญาตตำแหน่งให้ Safari)</span>`;
-  const d = K.dist([gps.lat, gps.lng], h.green), v = Math.round(PREF.unit === 'y' ? d * 1.09361 : d);
-  return d > 1500 ? `<span class="muted">อยู่ห่างสนาม</span>` : `ถึงกลางกรีน <b style="font-size:24px;color:#1b5e20">${v}</b> ${PREF.unit === 'y' ? 'หลา' : 'ม.'}`;
+  const me = [gps.lat, gps.lng], d = K.dist(me, h.green), u = x => Math.round(PREF.unit === 'y' ? x * 1.09361 : x), un = PREF.unit === 'y' ? 'หลา' : 'ม.';
+  if (d > 1500) return `<span class="muted">อยู่ห่างสนาม</span>`;
+  if (h.front && h.back) return `<div class="gpsrow"><div><b>${u(K.dist(me, h.front))}</b><small>หน้า</small></div><div><b class="c">${u(d)}</b><small>กลางกรีน (${un})</small></div><div><b>${u(K.dist(me, h.back))}</b><small>หลัง</small></div></div>`;
+  return `ถึงกลางกรีน <b style="font-size:24px;color:#1b5e20">${u(d)}</b> ${un}`;
 }
 
 /* ---------- prefs / header ---------- */
@@ -343,7 +345,7 @@ function rCreate() {
     <label class="lb">สนาม</label><input id="c_course" list="clist" placeholder="ชื่อสนาม" value="${esc(UI.pendGeo?.name || '')}"><datalist id="clist">${cs.map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
     <button class="btn sec full" data-act="csearch">🔎 ค้นหาสนาม & ดาวน์โหลดแผนที่</button>
     <div id="c_geo">${UI.pendGeo ? `<div class="note ok">🗺️ ${courseReport(UI.pendGeo.d).html}</div>` : ''}</div>
-    <div class="grid2"><div><label class="lb">วันที่</label><input id="c_date" type="date" value="${today()}"></div><div><label class="lb">Tee</label><input id="c_tee" placeholder="เช่น Blue"></div></div>
+    <div class="grid2"><div><label class="lb">วันที่</label><input id="c_date" type="date" value="${today()}"></div><div><label class="lb">Tee</label><input id="c_tee" list="teelist" placeholder="เช่น Blue"><datalist id="teelist">${['Black', 'Gold', 'Blue', 'White', 'Red'].map(t => `<option value="${t}">`).join('')}</datalist></div></div>
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
     <label class="lb">PIN แก๊ง 4 หลัก (บอกเพื่อนในก๊วน)</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
@@ -651,7 +653,7 @@ function rGang() {
     ${host ? '<button class="btn sec full" data-act="savecourse">💾 บันทึกเป็นข้อมูลสนาม (รอบหน้า/คนอื่นไม่ต้องตั้งอีก)</button>' : ''}</div>
   <div class="card"><h2>⚙️ ตั้งค่ารอบ ${host ? '' : '<span class="muted">(แก้ได้เฉพาะคนสร้างแก๊ง)</span>'}</h2>
     <label class="lb">สนาม</label>${inp('course', m.course, 'ชื่อสนาม')}
-    <div class="grid2"><div><label class="lb">วันที่</label>${inp('date', m.date, '', 'date')}</div><div><label class="lb">Tee</label>${inp('tee', m.tee, 'เช่น Blue')}</div></div>
+    <div class="grid2"><div><label class="lb">วันที่</label>${inp('date', m.date, '', 'date')}</div><div><label class="lb">Tee (สีแท่นที)</label>${inp('tee', m.tee, 'เช่น Blue').replace('<input', '<input list="teelist2"')}<datalist id="teelist2">${['Black', 'Gold', 'Blue', 'White', 'Red'].map(t => `<option value="${t}">`).join('')}</datalist></div></div>
     <div class="grid2"><div><label class="lb">Course Rating</label>${inp('cr', m.cr, 'เช่น 72.3', 'number', 'decimal')}</div><div><label class="lb">Slope</label>${inp('slope', m.slope, 'เช่น 128', 'number', 'numeric')}</div></div>
     <label class="lb">จำนวนหลุม</label><div class="seg">${[9, 18].map(v => `<button ${dis} data-act="setmeta" data-k="holes" data-v="${v}" class="${+m.holes === v ? 'on' : ''}">${v} หลุม</button>`).join('')}</div>
     <label class="lb">💰 เงินสุ่ม 3 อันดับต่อหลุม (บาท)</label><div class="grid3">${[0, 1, 2].map(k => `<input ${dis} type="number" inputmode="numeric" data-amt="${k}" value="${am[k]}">`).join('')}</div>

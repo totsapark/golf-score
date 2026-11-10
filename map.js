@@ -113,6 +113,8 @@ export function createMap(el, ctx) {
   setTimeout(() => { drawFeatures(); drawHole(true); }, 0);
 
   function hg(i) { return geo?.holes?.[hk(i)] || {}; }
+  // แท่นทีตามสี Tee ที่เลือกในแก๊ง (Black/Gold/Blue/White/Red) ถ้าไม่ระบุใช้ Blue
+  function teeOf(h) { const t = h.tees; if (!t) return h.tee; const want = (ctx.G().meta?.tee || '').trim().toLowerCase(); const k = Object.keys(t).find(x => x.toLowerCase() === want) || (t.Blue ? 'Blue' : Object.keys(t)[0]); return t[k] || h.tee; }
   function greenPoly(i) {
     const g = hg(i).green; if (!g || !geo?.features) return null;
     const greens = geo.features.filter(f => f.k === 'green');
@@ -135,7 +137,7 @@ export function createMap(el, ctx) {
   function from() {
     const i = ctx.hole(), g = ctx.gps(), h = hg(i);
     if (g && h.green && dist([g.lat, g.lng], h.green) < 1200) return { p: [g.lat, g.lng], me: true };
-    return h.tee ? { p: h.tee, me: false } : g ? { p: [g.lat, g.lng], me: true } : null;
+    const t = teeOf(h); return t ? { p: t, me: false } : g ? { p: [g.lat, g.lng], me: true } : null;
   }
   function drawDist() {
     const i = ctx.hole(), h = hg(i), f = from(), md = el.querySelector('#md');
@@ -143,17 +145,20 @@ export function createMap(el, ctx) {
     if (!f) { md.innerHTML = `<div class="muted" style="align-self:center">รอ GPS...</div>`; return; }
     const gp = greenPoly(i); let fr = null, bk = null;
     if (gp) { const ds = gp.c.map(p => dist(f.p, p)); fr = Math.min(...ds); bk = Math.max(...ds); }
+    else if (h.front && h.back) { fr = dist(f.p, h.front); bk = dist(f.p, h.back); }
+    const fb = gp || (h.front && h.back);
     const c = dist(f.p, h.green);
-    md.innerHTML = `${gp ? `<div><b style="font-size:18px">${fmt(fr)}</b><small>หน้า</small></div>` : ''}<div><b>${fmt(c)}</b><small>กลางกรีน (${un()})${f.me ? '' : ' จากที'}</small></div>${gp ? `<div><b style="font-size:18px">${fmt(bk)}</b><small>หลัง</small></div>` : ''}`;
+    md.innerHTML = `${fb ? `<div><b style="font-size:18px">${fmt(fr)}</b><small>หน้า</small></div>` : ''}<div><b>${fmt(c)}</b><small>กลางกรีน (${un()})${f.me ? '' : ' จากที'}</small></div>${fb ? `<div><b style="font-size:18px">${fmt(bk)}</b><small>หลัง</small></div>` : ''}`;
   }
   function drawHole(refit) {
     const i = ctx.hole(), G = ctx.G(), h = hg(i);
     el.querySelector('#mh').textContent = 'H' + (i + 1);
     el.querySelector('#mp').textContent = 'Par ' + par(G, i);
     holeL.clearLayers();
-    if (h.tee) L.marker(h.tee, { icon: icon('T', 'mlbl w'), interactive: false }).addTo(holeL);
+    const T = teeOf(h);
+    if (T) L.marker(T, { icon: icon('T', 'mlbl w'), interactive: false }).addTo(holeL);
     if (h.green) L.marker(h.green, { icon: L.divIcon({ html: '<div style="font-size:26px;transform:translate(-4px,-26px)">⛳</div>', className: '', iconSize: [0, 0] }), interactive: false }).addTo(holeL);
-    if (h.tee && h.green) L.polyline(h.line && h.line.length > 2 ? h.line : [h.tee, h.green], { color: '#fff', weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(holeL);
+    if (T && h.green) L.polyline(h.line && h.line.length > 2 ? [T, ...h.line.slice(1)] : [T, h.green], { color: '#fff', weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(holeL);
     if (refit || i !== lastHole) {
       lastHole = i; target = null; tgtL.clearLayers();
       const pts = [h.tee, h.green, ...(h.line || [])].filter(Boolean);
