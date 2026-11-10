@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.3.0';
+const APPVER = '2.3.1';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -779,5 +779,17 @@ document.addEventListener('touchend', e => { const el = e.target.closest?.('inpu
 
 setInterval(() => { if (UI.view === 'game' && UI.tab === 'live' && !document.querySelector('.dlg')) render(); }, 30000); // อัปเดตเวลา "x นาทีที่แล้ว"
 
-if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !MOCK) navigator.serviceWorker.register('sw.js').catch(() => {});
+// อัปเดตแอปอัตโนมัติ: มีเวอร์ชันใหม่ → โหลดใหม่ให้เอง (ข้อมูลทั้งหมดเก็บไว้แล้ว ไม่หาย)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http') && (!MOCK || Q.has('sw'))) {
+  const had = !!navigator.serviceWorker.controller; let reloading = false;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!had || reloading) return;
+    const busy = document.querySelector('.dlg') || (document.activeElement && document.activeElement.matches('input,textarea'));
+    if (busy) { toast('มีเวอร์ชันใหม่ · ปิดแล้วเปิดแอปใหม่เพื่ออัปเดต'); return; }
+    reloading = true; location.reload();
+  });
+}
 boot().catch(e => { $app.innerHTML = `<div class="card">เกิดข้อผิดพลาด: ${esc(e.message)}</div>`; });
