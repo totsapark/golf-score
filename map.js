@@ -212,7 +212,7 @@ export function createMap(el, ctx) {
     const i = wiz.i, h = hg(i), G = ctx.G();
     wizEl.hidden = false;
     wizEl.innerHTML = `<div><b>🛠 หลุม ${i + 1} / ${ctx.N()}</b> · Par ${par(G, i)}<br><span style="font-size:17px">${wiz.step === 'tee' ? '👆 แตะที่ <b>แท่นที</b>' : '👆 แตะที่ <b>กลางกรีน</b>'}</span>
-      <div class="muted">ซูม/เลื่อนแผนที่หาหลุมได้ก่อนแตะ${h.tee && h.green ? ' · หลุมนี้ตั้งไว้แล้ว แตะใหม่เพื่อแก้' : ''}</div></div>
+</div>
       <div class="grid3" style="margin-top:6px"><button class="btn sec" data-m="wback">‹ ย้อน</button><button class="btn sec" data-m="wskip">ข้าม ›</button><button class="btn" data-m="wdone">เสร็จ</button></div>`;
   }
   function wizGo(i, step = 'tee') {
@@ -271,7 +271,7 @@ export function createMap(el, ctx) {
       const s = myShots(i); if (!s.length) { ctx.toast('ยังไม่มีช็อตในหลุมนี้ กด 📍 บันทึกช็อต ตอนยืนที่ลูก'); return; }
       const h = hg(i);
       ctx.info(`ช็อตหลุม ${i + 1}`, s.map((x, k) => { const nx = s[k + 1] ? [s[k + 1].lat, s[k + 1].lng] : null; const d = nx ? dist([x.lat, x.lng], nx) : null;
-        return `${k + 1}. <b>${x.club}</b> ${d ? fmt(d) + ' ' + un() : (h.green ? '(เหลือถึงกรีน ' + fmt(dist([x.lat, x.lng], h.green)) + ')' : '')}`; }).join('<br>') + '<p class="muted">แตะที่ป้ายช็อตบนแผนที่เพื่อลบ</p>');
+        return `${k + 1}. <b>${x.club}</b> ${d ? fmt(d) + ' ' + un() : (h.green ? '(เหลือถึงกรีน ' + fmt(dist([x.lat, x.lng], h.green)) + ')' : '')}`; }).join('<br>') );
     }
     if (m === 'menu') menu();
   });

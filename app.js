@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.5.0';
+const APPVER = '2.5.1';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -17,6 +17,12 @@ const jget = (s, k, d) => { try { return JSON.parse(s.getItem(k)) ?? d; } catch 
 const jset = (s, k, v) => { try { s.setItem(k, JSON.stringify(v)); } catch (e) {} };
 const ids = () => jget(DEV, 'golf2_ids', {}), setId = (c, v) => { const o = ids(); if (v) o[c] = v; else delete o[c]; jset(DEV, 'golf2_ids', o); };
 const myGames = () => jget(DEV, 'golf2_games', []);
+// ลบแก๊งออกจากเครื่องนี้ (รายการล่าสุด + ข้อมูลที่เก็บไว้)
+function forgetGame(code) {
+  jset(DEV, 'golf2_games', myGames().filter(x => x.code !== code)); setId(code, null);
+  ['golf2_cache_', 'golf2_outbox_', 'golf2_geo_', 'golf2_geop_', 'golf2_cur_', 'golf2_pin_', 'golf2_seen_'].forEach(k => DEV.removeItem(k + code));
+  const a = jget(DEV, 'golf2_active', null); if (a && a.code === code) jset(DEV, 'golf2_active', null);
+}
 const addMyGame = g => { const a = myGames().filter(x => x.code !== g.code); a.unshift(g); jset(DEV, 'golf2_games', a.slice(0, 15)); };
 const PREF = jget(localStorage, 'golf2_prefs', { unit: 'y', sun: false, wake: true, sat: true });
 const setPref = (k, v) => { PREF[k] = v; jset(localStorage, 'golf2_prefs', PREF); };
@@ -147,7 +153,7 @@ async function route() {
   });
 }
 function onGame(g) {
-  if (!g || !g.meta) { UI.view = 'notfound'; render(); return; }
+  if (!g || !g.meta) { if (!Object.keys(OUT).length) forgetGame(CODE); UI.view = 'notfound'; render(); return; }
   for (const r in OUT) setIn(g, r, OUT[r].v); // ของที่ยังส่งไม่สำเร็จ ให้แสดงค่าล่าสุดของเครื่องนี้
   g.meta.code = CODE; G = g; saveCache(); setActive(CODE);
   if (!G.players?.[ME]) { setId(CODE, null); toast('คุณไม่ได้อยู่ในแก๊งนี้แล้ว'); route(); return; }
@@ -254,8 +260,7 @@ function courseReport(d) {
   const tp = Object.values(P.pars).reduce((a, b) => a + b, 0);
   if (!nh && !nf && !P.n && !d.outline) return { ok: false, html: 'ไม่พบข้อมูลสนามนี้ใน OpenStreetMap<br>ตั้งค่าหลุมเองได้ที่แท็บ 🗺️ แผนที่ → ⚙️ → 🛠 ตั้งค่าหลุมเอง' };
   return { ok: true, nh, html: `${d.name ? '<b>' + esc(d.name) + '</b><br>' : ''}${P.n >= 18 ? `✅ Par ครบ 18 หลุม (Par ${tp})` : P.n ? `⚠️ Par ${P.n} หลุม` : '⚠️ ยังไม่มี Par (ตั้งได้ในแท็บแก๊ง)'}<br>
-    ${nh >= 18 ? '✅' : '⚠️'} ตำแหน่งหลุม <b>${nh}</b>/18 หลุม · รูปทรงกรีน/บังเกอร์/น้ำ <b>${nf}</b> ชิ้น<br>📱 เก็บไว้ในเครื่องแล้ว ใช้ได้แม้ไม่มีเน็ต
-    ${nh < 18 ? `<div class="note" style="margin-bottom:0">สนามนี้ยังไม่มีตำแหน่งหลุม${nh ? 'ครบ' : ''} → ตั้งค่าหลุมเองครั้งเดียว (ประมาณ 5 นาที): แท็บ 🗺️ แผนที่ → ⚙️ → <b>🛠 ตั้งค่าหลุมเอง</b> แตะแท่นที/กรีนบนภาพดาวเทียม ทำครั้งเดียวทุกคนได้ด้วย</div>` : ''}` };
+    ${nh >= 18 ? '✅' : '⚠️'} ตำแหน่งหลุม <b>${nh}</b>/18 หลุม · รูปทรงกรีน/บังเกอร์/น้ำ <b>${nf}</b> ชิ้น` };
 }
 function geoFrom(d) { return { holes: d.holes, features: d.features, center: d.center, outline: d.outline || null }; }
 // ดาวน์โหลดเข้าแก๊งปัจจุบัน + เก็บเป็นแผนที่สนามไว้ใช้รอบหน้า
@@ -273,10 +278,9 @@ async function downloadIntoGame(at) {
 async function searchDownload() { const r = await courseSearchDialog(G?.meta?.course || ''); if (r) downloadIntoGame(r); }
 function gpsLine() {
   const h = geoCache?.holes?.[hk(UI.cur)];
-  if (!h?.green) return `<span class="muted">ยังไม่มีข้อมูลกรีนหลุมนี้ (ตั้งได้ในแท็บแผนที่)</span>`;
-  if (!gps) return `<span class="muted">รอ GPS... (อนุญาตตำแหน่งให้ Safari)</span>`;
+  if (!h?.green || !gps) return '';
   const me = [gps.lat, gps.lng], d = K.dist(me, h.green), u = x => Math.round(PREF.unit === 'y' ? x * 1.09361 : x), un = PREF.unit === 'y' ? 'หลา' : 'ม.';
-  if (d > 1500) return `<span class="muted">อยู่ห่างสนาม</span>`;
+  if (d > 1500) return '';
   if (h.front && h.back) return `<div class="gpsrow"><div><b>${u(K.dist(me, h.front))}</b><small>หน้า</small></div><div><b class="c">${u(d)}</b><small>กลางกรีน (${un})</small></div><div><b>${u(K.dist(me, h.back))}</b><small>หลัง</small></div></div>`;
   return `ถึงกลางกรีน <b style="font-size:24px;color:#1b5e20">${u(d)}</b> ${un}`;
 }
@@ -330,11 +334,12 @@ function rNoCfg() {
 function rHome() {
   const mg = myGames();
   $app.innerHTML = `
-  <div class="card center"><div style="font-size:52px">⛳</div><h2 style="font-size:20px">Golf Live</h2><p class="muted">จดสกอร์ของตัวเอง · ดูคะแนนเพื่อนแบบสด · สุ่มเงินอัตโนมัติ</p>
+  <div class="card center"><div style="font-size:52px">⛳</div><h2 style="font-size:20px">Golf Live</h2>
     <button class="btn full big-btn" data-act="create">🏌️ สร้างแก๊งใหม่</button></div>
-  <div class="card"><h2>🔑 เข้าร่วมแก๊ง</h2><p class="muted" style="margin-top:0">สแกน QR จากเพื่อนด้วยกล้อง iPhone หรือพิมพ์รหัส 6 ตัว</p>
+  <div class="card"><h2>🔑 เข้าร่วมแก๊ง</h2>
     <div style="display:flex;gap:8px"><input id="jcode" maxlength="6" placeholder="รหัสแก๊ง" style="text-transform:uppercase;font-weight:700;letter-spacing:3px"><button class="btn" data-act="joincode" style="flex:none">เข้า</button></div></div>
-  ${mg.length ? `<div class="card"><h2>🕘 แก๊งล่าสุดของฉัน</h2>${mg.map(g => `<div class="trow"><span><b>${esc(g.name)}</b><br><span class="muted">${thDate(g.date)} · ${g.code}</span></span><button class="btn sec" data-act="open" data-v="${g.code}">เปิด</button></div>`).join('')}</div>` : ''}
+  ${mg.length ? `<div class="card"><h2>🕘 แก๊งล่าสุดของฉัน</h2>${mg.map(g => `<div class="trow"><span><b>${esc(g.name)}</b><br><span class="muted">${thDate(g.date)} · ${g.code}</span></span><span style="display:flex;gap:6px"><button class="btn sec" data-act="open" data-v="${g.code}">เปิด</button><button class="x" data-act="forget" data-v="${g.code}">🗑</button></span></div>`).join('')}
+    <button class="btn red full" data-act="forgetall">ลบรายการทั้งหมด</button></div>` : ''}
   <button class="btn sec full" data-act="hist">📚 ประวัติ & Handicap Index</button>
   <p class="muted center" style="margin-top:16px">เวอร์ชัน ${APPVER}${MOCK ? ' · โหมดทดสอบ' : ''} · <a href="offline/" style="color:#1b5e20">แอปออฟไลน์ตัวเดิม</a></p>`;
 }
@@ -348,17 +353,17 @@ function rCreate() {
     <div class="grid2"><div><label class="lb">วันที่</label><input id="c_date" type="date" value="${today()}"></div><div><label class="lb">Tee</label><input id="c_tee" list="teelist" placeholder="เช่น Blue"><datalist id="teelist">${['Black', 'Gold', 'Blue', 'White', 'Red'].map(t => `<option value="${t}">`).join('')}</datalist></div></div>
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
-    <label class="lb">PIN แก๊ง 4 หลัก (บอกเพื่อนในก๊วน)</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+    <label class="lb">PIN แก๊ง 4 หลัก</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
   <div class="card"><div class="trow"><h2 style="margin:0">💰 กินตัง: สุ่ม 3 อันดับทุกหลุม</h2><button class="sw on" id="c_money" type="button"></button></div>
     <div id="c_moneyopts">
-    <p class="muted" style="margin-top:4px">ทุกคนจดครบหลุมไหน ระบบสุ่มอันดับ 3 ครั้งอัตโนมัติ (ไม่ซ้ำกัน) คนที่อยู่อันดับนั้นเสียตามนี้</p>
+    
     <div class="grid3"><div><label class="lb">สุ่มครั้งที่ 1</label><input id="c_a1" type="number" inputmode="numeric" value="30"></div><div><label class="lb">ครั้งที่ 2</label><input id="c_a2" type="number" inputmode="numeric" value="20"></div><div><label class="lb">ครั้งที่ 3</label><input id="c_a3" type="number" inputmode="numeric" value="10"></div></div>
     <label class="lb">จัดอันดับด้วย</label><div class="seg" id="c_by"><button data-v="gross" class="on">Gross</button><button data-v="net">Net (หักแต้มต่อ)</button></div>
     <label class="lb">อันดับที่สุ่มได้มีคนเสมอกัน</label><div class="seg" id="c_tie"><button data-v="all" class="on">เสียทุกคน</button><button data-v="putt">ตัดด้วยพัตต์</button><button data-v="one">สุ่ม 1 คน</button></div></div>
-    <p class="muted" id="c_moneyoff" style="display:none;margin:6px 0 0">ปิดกินตังอยู่ · เล่นจดสกอร์อย่างเดียว (เปิดทีหลังได้ในแท็บแก๊ง)</p></div>
+    </div>
   <button class="btn full big-btn" data-act="docreate">✅ สร้างแก๊ง</button>
   <button class="btn sec full" data-act="home">ยกเลิก</button>`;
-  document.getElementById('c_money').onclick = e => { const on = e.currentTarget.classList.toggle('on'); document.getElementById('c_moneyopts').style.display = on ? '' : 'none'; document.getElementById('c_moneyoff').style.display = on ? 'none' : ''; };
+  document.getElementById('c_money').onclick = e => { const on = e.currentTarget.classList.toggle('on'); document.getElementById('c_moneyopts').style.display = on ? '' : 'none';  };
   $app.querySelectorAll('.seg').forEach(s => s.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; s.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }));
 }
 async function doCreate() {
@@ -387,7 +392,7 @@ function rJoin() {
   if (!UI.pinOk) {
     $app.innerHTML = `<div class="card center"><div style="font-size:44px">🔑</div><h2>เข้าร่วมแก๊ง ${esc(CODE)}</h2>
       <p><b>${esc(m.course || 'รอบกอล์ฟ')}</b><br><span class="muted">${thDate(m.date)}${m.tee ? ' · Tee ' + esc(m.tee) : ''} · ${m.holes} หลุม</span></p>
-      <label class="lb">ใส่ PIN แก๊ง 4 หลัก (ถามคนสร้างแก๊ง)</label><input id="j_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••" autofocus>
+      <label class="lb">PIN แก๊ง</label><input id="j_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••" autofocus>
       <button class="btn full big-btn" data-act="checkpin">ยืนยัน</button><button class="btn sec full" data-act="home">กลับหน้าแรก</button></div>`;
     return;
   }
@@ -436,34 +441,34 @@ function rHole() {
   <div class="card"><div class="holebar"><button data-act="prev" ${i === 0 ? 'disabled' : ''}>◀</button>
     <div class="nm"><div class="muted">หลุมที่</div><b>${i + 1}</b> <span class="muted">/ ${N}</span><div class="parbig">Par ${K.par(G, i)}${G.holes?.[hk(i)]?.si ? ` <span class="muted">· HCP ${esc(G.holes[hk(i)].si)}</span>` : ''}</div></div>
     <button data-act="next" ${i >= N - 1 ? 'disabled' : ''}>▶</button></div><div class="chips">${chips}</div>
-    ${G.meta.parSrc ? '' : `<div class="note">Par ยังเป็นค่าเริ่มต้น (4) · ${isHost() ? 'ค้นหาสนามหรือตั้ง Par ได้ที่แท็บ 👥 แก๊ง' : 'คนสร้างแก๊งตั้งได้ที่แท็บแก๊ง'}</div>`}
+
     <div class="center" id="gpsd" style="margin-top:8px">${gpsLine()}</div></div>
   ${isHost() && PL.length > 1 ? `<div class="card" style="padding:8px 12px"><label class="lb" style="margin-top:0">จดให้ (เฉพาะคนสร้างแก๊ง)</label><div class="chips" style="padding:0">${PL.map(q => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${q.id === pid ? 'cur' : ''}" data-act="editfor" data-v="${q.id}">${esc(q.name)}</button>`).join('')}</div></div>` : ''}
   <div class="pcard ${sc != null ? 'ok' : ''}"><div class="ptop"><span class="n">${esc(p.name)}${pid === ME ? '' : ' <span class="muted">(จดแทน)</span>'}${st ? ` <span class="muted">+${st} แต้ม</span>` : ''}</span>
       <span>${sc != null ? `<span class="badge ${cl}">${sc} · ${lb}</span>` : ''}${K.gir(G, pid, i) ? '<span class="badge b-gir">GIR</span>' : ''}</span></div>
-    <div class="frow"><span class="t">ตีถึงออน<small>ไม่รวมลูกโทษ</small></span>${stepper('on', e.on)}</div>
+    <div class="frow"><span class="t">ตีถึงออน</span>${stepper('on', e.on)}</div>
     <div class="frow"><span class="t">พัตต์</span>${stepper('putt', e.putt)}</div>
     <div class="frow"><span class="t">Tee-off</span><div class="seg">
       <button class="l ${e.tee === 'l' ? 'on' : ''}" data-act="tee" data-v="l">⬅ ซ้าย</button><button class="${e.tee === 's' ? 'on' : ''}" data-act="tee" data-v="s">⬆ ตรง</button><button class="r ${e.tee === 'r' ? 'on' : ''}" data-act="tee" data-v="r">ขวา ➡</button></div></div>
-    <div class="grid4 pen">${K.PEN.map(([k, ic, nm, pt]) => `<button class="${e[k] ? 'on' : ''} ${pt ? '' : 'sand'}" data-act="pen" data-v="${k}">${ic} ${nm}<b>${e[k] ? '×' + e[k] + (pt ? ' (+' + e[k] * pt + ')' : '') : pt ? 'โทษ +1' : 'ไม่มีโทษ'}</b></button>`).join('')}</div>
+    <div class="grid4 pen">${K.PEN.map(([k, ic, nm, pt]) => `<button class="${e[k] ? 'on' : ''} ${pt ? '' : 'sand'}" data-act="pen" data-v="${k}">${ic} ${nm}${e[k] ? `<b>×${e[k]}</b>` : ''}</button>`).join('')}</div>
     ${sc != null ? `<div class="formula">สกอร์ ${sc} = ออน ${e.on} + พัตต์ ${e.putt}${pn ? ` + โทษ ${pn}` : ''}${st ? ` · Net ${sc - st}` : ''}</div>` : ''}</div>
   <div class="card"><div class="ptop"><h2 style="margin:0">🏌️ ช็อตหลุมนี้</h2><span class="muted">${pid === ME ? '' : 'ของ ' + esc(p.name)}</span></div>
     ${shotList(pid, i)}
     <button class="btn full big-btn" data-act="shot">📍 ตีแล้ว · บันทึกช็อต</button>
-    <p class="muted center" style="margin:6px 0 0">กดตอนยืนที่ลูกก่อนตี แล้วเลือกไม้ ระบบจะจำตำแหน่งและคำนวณระยะให้</p></div>
+    </div>
   <div class="card"><h2>👥 หลุมนี้ของแก๊ง ${MON && K.hasHC(G) ? `<span class="muted">(เงินคิดด้วย ${G.meta.moneyBy === 'net' ? 'Net' : 'Gross'})</span>` : ''}</h2>
     <table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${K.hasHC(G) ? '<th>Net</th>' : ''}${MON ? '<th>เสีย</th>' : ''}</tr>${rows}</table>
-    ${!MON ? '' : mo.picks ? `<div class="note">🎲 สุ่มได้อันดับ ${mo.picks.join(', ')} → ${K.amounts(G).slice(0, mo.picks.length).join(' / ')} บาท</div>` : mo.done ? `<p class="muted center">🎲 ทุกคนจดครบแล้ว กำลังจะสุ่ม... (แก้คะแนนได้ภายใน 20 วินาที)</p>` : `<p class="muted center">🎲 สุ่มเงินอัตโนมัติเมื่อทุกคนจดหลุมนี้ครบ</p>`}</div>
+    ${!MON ? '' : mo.picks ? `<div class="note">🎲 สุ่มได้อันดับ ${mo.picks.join(', ')} → ${K.amounts(G).slice(0, mo.picks.length).join(' / ')} บาท</div>` : ''}</div>
   ${i < N - 1 ? `<button class="btn full big-btn" data-act="next">ไปหลุม ${i + 2} ▶</button>` : `<button class="btn full big-btn" data-act="tab" data-v="sum">ดูสรุปผล 🏁</button>`}`;
 }
 function shotsOf(pid, i) { return Object.entries(G.shots?.[pid]?.[hk(i)] || {}).map(([k, v]) => ({ k, ...v })).sort((a, b) => a.t - b.t); }
 function shotList(pid, i) {
   const s = shotsOf(pid, i), green = geoCache?.holes?.[hk(i)]?.green, u = PREF.unit === 'y' ? 1.09361 : 1, un = PREF.unit === 'y' ? 'หลา' : 'ม.';
-  if (!s.length) return '<p class="muted" style="margin:4px 0">ยังไม่มีช็อต</p>';
+  if (!s.length) return '';
   return `<div class="shots">${s.map((x, k) => { const nx = s[k + 1], d = nx && x.lat != null && nx.lat != null ? K.dist([x.lat, x.lng], [nx.lat, nx.lng]) : null;
     const left = !nx && green && x.lat != null ? K.dist([x.lat, x.lng], green) : null;
     return `<span class="shot" data-act="delshot" data-v="${x.k}"><b>${k + 1}</b> ${esc(x.club)}${d ? ` · ${Math.round(d * u)}` : left ? ` · เหลือ ${Math.round(left * u)}` : ''}</span>`; }).join('<i>›</i>')}</div>
-    <p class="muted" style="margin:4px 0 0">ระยะเป็น${un} · แตะที่ช็อตเพื่อลบ</p>`;
+    `;
 }
 async function addShot(pid, i) {
   const club = await chooseClub(); if (!club) return;
@@ -547,9 +552,9 @@ function rLive() {
   <div class="card"><h2>🏆 Leaderboard สด</h2>
     ${hc ? `<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${UI.sortBy !== 'net' ? 'on' : ''}">Gross</button><button data-act="sortBy" data-v="net" class="${UI.sortBy === 'net' ? 'on' : ''}">Net</button></div>` : ''}
     <div class="scroll"><table><tr><th>#</th><th class="l">ผู้เล่น</th><th>To Par</th>${hc ? '<th>Net</th>' : ''}<th>Thru</th><th>อยู่</th><th>สกอร์</th>${MON ? '<th>เสีย</th>' : ''}</tr>${rows}</table></div>
-    <p class="muted">อัปเดตอัตโนมัติทันทีที่ใครจดสกอร์ · F = จบรอบ${MON ? ` · กองกลางตอนนี้ <b>${pot} บาท</b>` : ''}</p></div>
+    </div>
   <div class="card"><h2>📰 ความเคลื่อนไหวล่าสุด</h2><div class="feed">${feedH || '<p class="muted">ยังไม่มีใครจดสกอร์</p>'}</div></div>
-  <div class="card"><h2>📋 สกอร์การ์ดสด</h2><div class="scroll">${scorecard()}</div><p class="muted">สีแดง = ต่ำกว่า Par · ● = GIR · ตัวเลขเล็กสีแดง = เงินที่เสีย</p></div>`;
+  <div class="card"><h2>📋 สกอร์การ์ดสด</h2><div class="scroll">${scorecard()}</div></div>`;
 }
 function scorecard() {
   const PL = K.players(G), N = K.nHoles(G), hc = K.hasHC(G), two = N == 18;
@@ -599,18 +604,18 @@ function rSum() {
   <div class="card"><h2>🏁 สรุปผล · ${esc(G.meta.course || '')}</h2><p class="muted" style="margin-top:-6px">${thDate(G.meta.date)}${G.meta.tee ? ' · Tee ' + esc(G.meta.tee) : ''}</p>
     ${hc ? `<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${UI.sortBy !== 'net' ? 'on' : ''}">เรียง Gross</button><button data-act="sortBy" data-v="net" class="${UI.sortBy === 'net' ? 'on' : ''}">เรียง Net</button></div>` : ''}
     <div class="scroll"><table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${hc ? '<th>Net</th>' : ''}<th>พัตต์</th><th>GIR</th><th>HCP</th><th>Course<br>HCP</th></tr>${top}</table></div>
-    <p class="muted">HCP = Handicap โดยประมาณจากรอบนี้ (WHS) · Course HCP = แต้มต่อที่ควรได้ในสนามนี้${G.meta.cr ? '' : ' · ใส่ Rating/Slope ได้ในแท็บแก๊ง'}</p></div>
+    </div>
   ${aw ? `<div class="card"><h2>🏅 รางวัลประจำรอบ</h2>${aw}</div>` : ''}
-  ${!K.moneyOn(G) ? (bill ? `<div class="card"><h2>🍛 ค่ากับข้าว</h2><div class="note">ค่ากับข้าว ${bill} บาท หาร ${n} คน → คนละ <b>${Math.ceil(bill / n)} บาท</b></div><p class="muted">ปิดกินตังอยู่ จึงหารเท่ากันทุกคน</p></div>` : '') : `<div class="card"><h2>💰 เงิน & ค่ากับข้าว</h2><div class="big">กองกลาง ${pot} บาท</div>
-    ${bill ? `<div class="note">ค่ากับข้าว ${bill} บาท → ${extra ? `กองกลางไม่พอ ทุกคนจ่ายเพิ่มคนละ <b>${extra} บาท</b>` : left ? `กองกลางเหลือ <b>${left} บาท</b>` : 'พอดี 👍'}</div>` : '<p class="muted">ใส่ยอดค่ากับข้าวได้ในแท็บแก๊ง</p>'}
+  ${!K.moneyOn(G) ? (bill ? `<div class="card"><h2>🍛 ค่ากับข้าว</h2><div class="note">ค่ากับข้าว ${bill} บาท หาร ${n} คน → คนละ <b>${Math.ceil(bill / n)} บาท</b></div></div>` : '') : `<div class="card"><h2>💰 เงิน & ค่ากับข้าว</h2><div class="big">กองกลาง ${pot} บาท</div>
+    ${bill ? `<div class="note">ค่ากับข้าว ${bill} บาท → ${extra ? `กองกลางไม่พอ ทุกคนจ่ายเพิ่มคนละ <b>${extra} บาท</b>` : left ? `กองกลางเหลือ <b>${left} บาท</b>` : 'พอดี 👍'}</div>` : ''}
     <div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>โดนสุ่ม<br>(หลุม)</th><th>เข้ากอง</th>${bill ? '<th>รวมจ่าย<br>ค่าข้าว</th>' : ''}</tr>${moneyT}</table></div></div>`}
-  ${bars ? `<div class="card"><h2>📈 การกระจายสกอร์</h2><div class="legend">${legend}</div>${bars}<p class="muted">แตะแถบเพื่อดูจำนวนหลุม</p></div>` : ''}
+  ${bars ? `<div class="card"><h2>📈 การกระจายสกอร์</h2><div class="legend">${legend}</div>${bars}</div>` : ''}
   ${parT ? `<div class="card"><h2>⛳ สกอร์เฉลี่ยตาม Par${two ? ' / หน้า-หลัง' : ''}</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>Par 3</th><th>Par 4</th><th>Par 5</th>${two ? '<th>OUT</th><th>IN</th>' : ''}<th>ดีสุด</th><th>แย่สุด</th></tr>${parT}</table></div></div>` : ''}
   ${shortT ? `<div class="card"><h2>🎯 พัตต์ & ลูกสั้น</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>พัตต์<br>/หลุม</th><th>พัตต์<br>/GIR</th><th>1 พัตต์</th><th>3 พัตต์+</th><th>ชิปลง</th><th>Scram-<br>bling</th><th>Bounce<br>back</th></tr>${shortT}</table></div></div>` : ''}
   <div class="card"><h2>🚫 ลูกโทษ & บังเกอร์</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>🌳</th><th>💧</th><th>🚫 OB</th><th>แต้มโทษ</th><th>🏖️</th><th>Sand save</th></tr>${penT}</table></div></div>
   <div class="card"><h2>🏌️ Tee-off</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>⬅</th><th>⬆</th><th>➡</th><th>Fairway<br>Par 4-5</th><th>สกอร์เมื่อ<br>ตีตรง</th><th>เมื่อ<br>ไม่ตรง</th></tr>${teeT}</table></div></div>
   <div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2>${cl.length ? `<table><tr><th class="l">ไม้</th><th>ใช้</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b>${c.cat !== c.c ? ` <span class="muted">${c.cat}</span>` : ''}</td><td>${c.n}</td><td><b>${c.avg != null ? Math.round(c.avg * u) : '-'}</b></td><td>${c.max != null ? Math.round(c.max * u) : '-'}</td></tr>`).join('')}</table>
-    <p class="muted">ระยะคำนวณจากตำแหน่งช็อตนั้นถึงช็อตถัดไป (ช็อตสุดท้ายของหลุมและพัตต์ไม่นับระยะ)</p>` : '<p class="muted">ยังไม่มี · กด "📍 ตีแล้ว · บันทึกช็อต" ตอนยืนที่ลูกทุกช็อต แล้วเลือกไม้ ระบบจะคำนวณระยะแต่ละไม้ให้</p>'}</div>
+    ` : '<p class="muted">ยังไม่มี · กด "📍 ตีแล้ว · บันทึกช็อต" ตอนยืนที่ลูกทุกช็อต แล้วเลือกไม้ ระบบจะคำนวณระยะแต่ละไม้ให้</p>'}</div>
   <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll">${scorecard()}</div></div>
   <div class="card"><h2>📤 แชร์ & บันทึก</h2>
     <button class="btn full" data-act="img">📷 ส่งรูปสกอร์การ์ด</button>
@@ -637,32 +642,30 @@ function rGang() {
   const inp = (k, v, ph, type = 'text', im = '') => `<input ${dis} type="${type}" ${im ? `inputmode="${im}"` : ''} data-meta="${k}" value="${esc(v)}" placeholder="${ph}">`;
   $app.innerHTML = `
   <div class="card center"><h2>📲 ชวนเพื่อนเข้าแก๊ง</h2><div class="qr">${qrSvg(joinUrl())}</div>
-    <div class="code">${CODE}</div>${pin ? `<p>PIN แก๊ง: <b style="font-size:22px;letter-spacing:4px">${esc(pin)}</b></p>` : '<p class="muted">PIN อยู่ที่คนสร้างแก๊ง</p>'}
-    <p class="muted">ให้เพื่อนสแกนด้วยกล้อง iPhone → เปิดใน Safari → ใส่ PIN → เลือกชื่อ</p>
+    <div class="code">${CODE}</div>${pin ? `<p>PIN แก๊ง: <b style="font-size:22px;letter-spacing:4px">${esc(pin)}</b></p>` : ''}
+    
     <button class="btn sec full" data-act="sharelink">🔗 แชร์ลิงก์เข้าแก๊ง</button></div>
   <div class="card"><h2>👥 ผู้เล่น (${PL.length}/10)</h2>
     ${PL.map(p => `<div class="trow"><span class="av" style="background:${p.color || '#2e7d32'}">${esc(p.name.slice(0, 1))}</span><span style="flex:1"><b>${esc(p.name)}</b>${p.host ? ' 👑' : ''}${p.id === ME ? ' <span class="muted">(ฉัน)</span>' : ''}<br><span class="muted">${p.uid ? 'มีเครื่องจดแล้ว' : 'ยังไม่มีเครื่อง'}</span></span>
       <input ${host || p.id === ME ? '' : 'disabled'} type="number" inputmode="numeric" data-phc="${p.id}" value="${esc(p.hc)}" placeholder="แต้ม" style="width:64px;text-align:center">
       ${host && p.id !== ME ? `<button class="x" data-act="kick" data-v="${p.id}">✕</button>` : ''}</div>`).join('')}
-    ${host ? `<div style="display:flex;gap:8px;margin-top:8px"><input id="addname" placeholder="เพิ่มชื่อเพื่อนล่วงหน้า"><button class="btn" data-act="addp" style="flex:none">เพิ่ม</button></div><p class="muted">เพิ่มชื่อไว้ก่อนได้ เพื่อนสแกนแล้วแตะชื่อตัวเอง · คนสร้างแก๊งจดแทนเพื่อนได้ในแท็บจดสกอร์</p>` : ''}</div>
+    ${host ? `<div style="display:flex;gap:8px;margin-top:8px"><input id="addname" placeholder="เพิ่มชื่อเพื่อนล่วงหน้า"><button class="btn" data-act="addp" style="flex:none">เพิ่ม</button></div>` : ''}</div>
   <div class="card"><h2>🗺️ แผนที่สนาม</h2>
-    ${(() => { const st = geoStat(geoCache); return st.ok ? `<div class="note ok">✅ มีแผนที่แล้ว: ข้อมูลกรีน <b>${st.nh}</b> หลุม · รูปทรง <b>${st.nf}</b> ชิ้น<br>📱 เก็บไว้ในเครื่องนี้แล้ว ใช้ได้แม้ไม่มีเน็ต</div>` : '<div class="note">ยังไม่มีแผนที่สนาม ดาวน์โหลดไว้ก่อนออกรอบ (ตอนมี Wi-Fi) จะดูระยะได้แม้สัญญาณไม่ดี</div>'; })()}
+    ${(() => { const st = geoStat(geoCache); return st.ok ? `<div class="note ok">✅ มีแผนที่แล้ว: ข้อมูลกรีน <b>${st.nh}</b> หลุม · รูปทรง <b>${st.nf}</b> ชิ้น</div>` : ''; })()}
     <button class="btn full" data-act="gsearch">🔎 ค้นหาสนามจากชื่อ & ดาวน์โหลด</button>
     ${geoStat(geoCache).nh < K.nHoles(G) ? `<button class="btn sec full" data-act="gwiz">🛠 ตั้งค่าหลุมเอง (แตะแท่นที/กรีนบนภาพดาวเทียม)</button>` : ''}
     <div class="grid2"><button class="btn sec" data-act="ghere">📍 ใช้ตำแหน่งฉัน</button><button class="btn sec" data-act="tab" data-v="map">🗺️ เปิดแผนที่</button></div>
-    <p class="muted">ข้อมูลจาก OpenStreetMap · ภาพดาวเทียมจะถูกเก็บในเครื่องเฉพาะส่วนที่เคยเปิดดู (เปิดดูทุกหลุมตอนมี Wi-Fi ไว้ก่อนได้)</p></div>
+    </div>
   <div class="card"><h2>📋 Par & HCP ของสนาม</h2>
-    ${G.meta.parSrc ? '<div class="note ok">✅ Par มาจากข้อมูลสนามแล้ว ไม่ต้องตั้งเอง</div>' : '<div class="note">ยังไม่มีข้อมูล Par ของสนามนี้ · ค้นหาสนามด้านบน หรือ' + (host ? 'ตั้งเองครั้งเดียวในตารางนี้แล้วกดบันทึก' : 'ให้คนสร้างแก๊งตั้ง') + '</div>'}
     <div class="partbl">${[...Array(K.nHoles(G)).keys()].map(i => `<div><b>${i + 1}</b><select ${dis} data-hpar="${i}">${[3, 4, 5, 6].map(v => `<option ${K.par(G, i) === v ? 'selected' : ''}>${v}</option>`).join('')}</select><input ${dis} type="number" inputmode="numeric" data-hsi="${i}" value="${esc(G.holes?.[hk(i)]?.si)}" placeholder="HCP"></div>`).join('')}</div>
-    <p class="muted">แถวบน = Par · แถวล่าง = HCP หลุม (Stroke index ใช้คิดแต้มต่อ) · รวม Par ${K.totalPar(G)}</p>
+    
     ${host ? '<button class="btn sec full" data-act="savecourse">💾 บันทึกเป็นข้อมูลสนาม (รอบหน้า/คนอื่นไม่ต้องตั้งอีก)</button>' : ''}</div>
-  <div class="card"><h2>⚙️ ตั้งค่ารอบ ${host ? '' : '<span class="muted">(แก้ได้เฉพาะคนสร้างแก๊ง)</span>'}</h2>
+  <div class="card"><h2>⚙️ ตั้งค่ารอบ</h2>
     <label class="lb">สนาม</label>${inp('course', m.course, 'ชื่อสนาม')}
     <div class="grid2"><div><label class="lb">วันที่</label>${inp('date', m.date, '', 'date')}</div><div><label class="lb">Tee (สีแท่นที)</label>${inp('tee', m.tee, 'เช่น Blue').replace('<input', '<input list="teelist2"')}<datalist id="teelist2">${['Black', 'Gold', 'Blue', 'White', 'Red'].map(t => `<option value="${t}">`).join('')}</datalist></div></div>
     <div class="grid2"><div><label class="lb">Course Rating</label>${inp('cr', m.cr, 'เช่น 72.3', 'number', 'decimal')}</div><div><label class="lb">Slope</label>${inp('slope', m.slope, 'เช่น 128', 'number', 'numeric')}</div></div>
     <label class="lb">จำนวนหลุม</label><div class="seg">${[9, 18].map(v => `<button ${dis} data-act="setmeta" data-k="holes" data-v="${v}" class="${+m.holes === v ? 'on' : ''}">${v} หลุม</button>`).join('')}</div>
-    <div class="trow" style="margin-top:10px"><span><b>💰 กินตัง</b><br><span class="muted">สุ่ม 3 อันดับทุกหลุมอัตโนมัติ</span></span><button ${dis} class="sw ${K.moneyOn(G) ? 'on' : ''}" data-act="moneytoggle"></button></div>
-    ${K.moneyOn(G) ? '' : '<div class="note">ปิดกินตังอยู่ · ไม่มีการสุ่มเงิน ค่ากับข้าวหารเท่ากันทุกคน</div>'}
+    <div class="trow" style="margin-top:10px"><span><b>💰 กินตัง</b></span><button ${dis} class="sw ${K.moneyOn(G) ? 'on' : ''}" data-act="moneytoggle"></button></div>
     <div ${K.moneyOn(G) ? '' : 'hidden'}>
     <label class="lb">💰 เงินสุ่ม 3 อันดับต่อหลุม (บาท)</label><div class="grid3">${[0, 1, 2].map(k => `<input ${dis} type="number" inputmode="numeric" data-amt="${k}" value="${am[k]}">`).join('')}</div>
     <label class="lb">จัดอันดับเงินด้วย</label><div class="seg">${[['gross', 'Gross'], ['net', 'Net']].map(([v, t]) => `<button ${dis} data-act="setmeta" data-k="moneyBy" data-v="${v}" class="${(m.moneyBy || 'gross') === v ? 'on' : ''}">${t}</button>`).join('')}</div>
@@ -673,7 +676,8 @@ function rGang() {
     <div class="trow"><span>โหมดกลางแดด</span><button class="sw ${PREF.sun ? 'on' : ''}" data-act="sun"></button></div>
     <div class="trow"><span>กันจอดับ</span><button class="sw ${PREF.wake ? 'on' : ''}" data-act="wake"></button></div>
     <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>
-    <button class="btn red full" data-act="leave">ออกจากแก๊งในเครื่องนี้</button></div>
+    <button class="btn red full" data-act="leave">ออกจากแก๊งในเครื่องนี้</button>
+    ${host ? '<button class="btn red full" data-act="delgang">🗑 ลบแก๊งนี้ทิ้ง (ข้อมูลทุกคน)</button>' : ''}</div>
   <p class="muted center">Golf Live ${APPVER}${MOCK ? ' · โหมดทดสอบ' : ''}</p>`;
 }
 
@@ -699,9 +703,10 @@ function rHist() {
   const ph = Object.values(m).map(x => ({ ...x, hi: K.hIndex(x.diffs), avg: x.diffs.length ? Math.round(x.diffs.reduce((a, b) => a + b, 0) / x.diffs.length * 10) / 10 : null })).sort((a, b) => (a.hi ?? a.avg ?? 99) - (b.hi ?? b.avg ?? 99));
   $app.innerHTML = `
   <div class="card"><h2>🏌️ Handicap Index</h2>${ph.length ? `<table><tr><th class="l">ผู้เล่น</th><th>รอบ</th><th>HI</th></tr>${ph.map(x => `<tr><td class="l"><b>${esc(x.name)}</b></td><td>${x.rounds}</td><td class="hcp">${x.hi ?? (x.avg != null ? '~' + x.avg : '-')}</td></tr>`).join('')}</table>
-    <p class="muted">แบบ WHS จาก 20 รอบล่าสุด ต้องมีอย่างน้อย 3 รอบที่ตีครบ (~ = ค่าเฉลี่ยคร่าว ๆ)</p>` : '<p class="muted">ยังไม่มีประวัติ จบรอบแล้วกด "บันทึกรอบนี้ลงประวัติ" ในหน้าสรุป</p>'}</div>
+    ` : '<p class="muted">ยังไม่มีประวัติ จบรอบแล้วกด "บันทึกรอบนี้ลงประวัติ" ในหน้าสรุป</p>'}</div>
   ${[...HIST].reverse().map(r => `<div class="card"><div class="ptop"><span><b>${esc(r.course || 'รอบกอล์ฟ')}</b><br><span class="muted">${thDate(r.date)} · ${r.holes} หลุม · Par ${r.par}</span></span><button class="x" data-act="delround" data-v="${r.rid}">🗑</button></div>
     <table><tr><th class="l">ผู้เล่น</th><th>Gross</th><th>Net</th><th>Diff</th><th>เสีย</th></tr>${r.players.filter(p => p.n).sort((a, b) => (a.gross - a.par) - (b.gross - b.par)).map(p => `<tr><td class="l">${esc(p.name)}</td><td><b>${p.gross}</b></td><td>${p.net}</td><td>${p.diff ?? '-'}</td><td class="pay">${p.money}฿</td></tr>`).join('')}</table></div>`).join('')}
+  ${HIST.length ? '<button class="btn red full" data-act="clearhist">🗑 ลบประวัติทั้งหมด</button>' : ''}
   <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>`;
 }
 
@@ -759,6 +764,14 @@ document.addEventListener('click', async e => {
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
     case 'hist': UI.view = 'hist'; render(); return;
+    case 'forget': { const pend = Object.keys(jget(DEV, 'golf2_outbox_' + v, {})).length;
+      if (!(await ask(pend ? `แก๊ง ${v} ยังมีข้อมูลรอส่ง ${pend} รายการ ลบออกจากเครื่องนี้เลยไหม?` : `ลบแก๊ง ${v} ออกจากรายการ?`))) return;
+      forgetGame(v); render(); return; }
+    case 'forgetall': if (!(await ask('ลบรายการแก๊งทั้งหมดในเครื่องนี้?'))) return; myGames().forEach(g => forgetGame(g.code)); render(); return;
+    case 'clearhist': if (!(await ask('ลบประวัติทั้งหมด? (Handicap Index จะเริ่มนับใหม่)'))) return; HIST = []; jset(localStorage, 'golf2_hist', HIST); render(); return;
+    case 'delgang': { if (!(await ask('ลบแก๊งนี้ทิ้ง? คะแนน แผนที่ และข้อมูลของทุกคนในแก๊งจะหายถาวร'))) return;
+      const c = CODE; await Promise.all([ST.set('games/' + c, null), ST.set('geos/' + c, null), ST.set(`locs/${c}/${ME}`, null)]).catch(() => {});
+      forgetGame(c); toast('ลบแก๊งแล้ว'); go(null); return; }
     case 'delround': if (await ask('ลบรอบนี้ออกจากประวัติ?')) { HIST = HIST.filter(r => r.rid !== v); jset(localStorage, 'golf2_hist', HIST); render(); } return;
     case 'checkpin': checkPin(); return;
     case 'claim': claim(v, false); return;
