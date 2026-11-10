@@ -93,7 +93,11 @@ async function boot() {
   applyPrefs();
   try { ST = await makeStore(FIREBASE_CONFIG); } catch (e) { ST = null; }
   if (!ST) { UI.view = 'nocfg'; render(); return; }
-  try { UID = await ST.auth(); } catch (e) { UI.view = 'err'; UI.err = e.message; render(); return; }
+  try { UID = await ST.auth(); } catch (e) {
+    const c = String(e.code || e.message || '');
+    UI.err = c.includes('configuration-not-found') || c.includes('operation-not-allowed') ? 'ระบบยังตั้งค่าไม่เสร็จ: ต้องเปิด Anonymous ใน Firebase Authentication ก่อน (คนสร้างแอป)'
+      : c.includes('network') ? 'ยังเชื่อมต่ออินเทอร์เน็ตไม่ได้ · เปิดแอปครั้งแรกต้องมีเน็ต' : e.message;
+    UI.view = 'err'; render(); return; }
   ST.online(v => { const was = online; online = v; hdr(); if (v && !was) onResume(); });
   CODE = (Q.get('g') || '').toUpperCase() || null;
   if (!CODE) { // เปิดแอปใหม่ (เช่น iPhone ปิดแอปไปเอง) → กลับเข้าแก๊งที่เล่นอยู่ทันที
