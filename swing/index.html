@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b5e20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="../icon-192.png">
+<link rel="apple-touch-icon" href="../icon-192.png">
+<title>สวิงไดรเวอร์ ⛳</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans Thai",Tahoma,sans-serif;background:#eef3ee;color:#1c2b1c;font-size:16px;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;z-index:10;background:#1b5e20;color:#fff;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));display:flex;align-items:center;gap:10px;box-shadow:0 2px 6px #0003}
+header a{color:#fff;text-decoration:none;background:#ffffff22;border-radius:10px;padding:6px 10px;font-size:15px;flex:none}
+header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+main{padding:12px;max-width:720px;margin:0 auto}
+.card{background:#fff;border-radius:14px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px #0001}
+.card h2{font-size:16px;margin:0 0 8px;color:#1b5e20}
+.muted{color:#778;font-size:13px}
+.seg{display:flex;gap:6px}
+.seg button{flex:1;border:1px solid #bcc;background:#fff;border-radius:10px;padding:9px 0;font-size:14px;font-weight:600;color:#445;font-family:inherit}
+.seg button.on{background:#1b5e20;color:#fff;border-color:#1b5e20}
+.seg button.on.bad{background:#c62828;border-color:#c62828}
+.stagecard{padding:0;overflow:hidden;position:relative}
+#stage{display:block;width:100%;height:auto;max-height:62vh;background:linear-gradient(#dcefff,#f3faf3 78%)}
+.hint{position:absolute;left:10px;right:10px;top:10px;text-align:center;pointer-events:none}
+.hint span{display:inline-block;background:#fff8e1f2;color:#6d4c00;border-radius:20px;padding:6px 12px;font-size:14px;font-weight:700;box-shadow:0 1px 4px #0002}
+.hint span.bad{background:#ffebeef2;color:#b71c1c}
+.hint span:empty{display:none}
+.tclock{position:absolute;right:10px;bottom:8px;font-size:12px;color:#556;background:#ffffffcc;border-radius:8px;padding:3px 7px;font-variant-numeric:tabular-nums}
+.wbar{display:flex;height:30px;border-radius:10px;overflow:hidden;font-size:13px;font-weight:700;color:#fff}
+.wbar div{display:flex;align-items:center;padding:0 8px;white-space:nowrap;transition:none;min-width:0;overflow:hidden}
+.wbar .wl{background:#ef6c00}.wbar .wr{background:#1565c0;justify-content:flex-end}
+.wlab{display:flex;justify-content:space-between;font-size:12px;color:#667;margin-top:4px}
+.ctrl{display:flex;gap:6px;align-items:center;margin-top:10px}
+.ctrl button{border:0;border-radius:10px;background:#e3ece3;color:#1b5e20;font-size:18px;font-weight:700;height:44px;min-width:46px;font-family:inherit}
+.ctrl button.play{flex:1;background:#1b5e20;color:#fff;font-size:17px}
+.ctrl button.on{background:#1b5e20;color:#fff}
+input[type=range]{width:100%;margin:10px 0 0;accent-color:#1b5e20}
+.tbar{position:relative;height:22px;margin:2px 7px 0;font-size:10px;color:#556}
+.tbar .sg{position:absolute;top:0;height:6px;border-radius:3px}
+.tbar .tk{position:absolute;top:8px;transform:translateX(-50%);white-space:nowrap}
+.lbl{font-size:13px;color:#667;margin:10px 0 4px}
+.ph h3{margin:0;font-size:18px;color:#1b5e20}.ph h3 small{font-size:13px;color:#889;font-weight:600;margin-left:4px}
+.bad-mode .ph h3{color:#c62828}
+.ph ul{margin:8px 0 0;padding-left:20px}.ph li{margin:3px 0;line-height:1.45}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;text-align:center}
+.stats div{background:#f1f6f1;border-radius:10px;padding:6px 2px;font-size:11px;color:#667}
+.stats b{display:block;font-size:17px;color:#1b5e20;font-variant-numeric:tabular-nums}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:420px){.grid2{gap:8px}}
+.meter{margin:8px 0}.meter .mt{display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px}
+.meter .mb{height:12px;background:#eef2ee;border-radius:6px;overflow:hidden}.meter .mb i{display:block;height:100%;border-radius:6px}
+.plist button{display:flex;width:100%;align-items:center;gap:10px;border:0;background:none;padding:9px 6px;border-bottom:1px solid #eef2ee;font-family:inherit;font-size:15px;color:inherit;text-align:left}
+.plist button:last-child{border-bottom:0}
+.plist button span{font-size:12px;color:#889;width:52px;flex:none;font-variant-numeric:tabular-nums}
+.plist button.cur{background:#e6f2e6;border-radius:8px;font-weight:700}
+.bad-mode .plist button.cur{background:#ffebee}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 5px;text-align:center;border-bottom:1px solid #e3e8e3}
+th{background:#f1f6f1;color:#335;font-size:13px}td.l,th.l{text-align:left}
+.qa p{margin:6px 0;line-height:1.55}
+.qa .big{font-size:20px;font-weight:800;color:#1b5e20}
+.btn{border:0;border-radius:10px;padding:10px 12px;font-size:15px;font-weight:600;background:#e3ece3;color:#1b5e20;font-family:inherit;margin-top:6px}
+.legend{display:flex;gap:12px;font-size:12px;color:#556;margin-top:4px;flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px;border-radius:2px}
+svg text{font-family:inherit}
+</style>
+</head>
+<body>
+<header><a href="../">‹ Golf Live</a><h1>🏌️ สวิงไดรเวอร์ ทีละจังหวะ</h1></header>
+<main id="main">
+
+<div class="card stagecard">
+  <svg id="stage" viewBox="-140 -285 280 310" aria-label="แอนิเมชันการสวิงไดรเวอร์">
+    <defs>
+      <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7cb342"/><stop offset="1" stop-color="#558b2f"/></linearGradient>
+    </defs>
+    <rect x="-140" y="0" width="280" height="25" fill="url(#grass)"/>
+    <g id="world">
+      <ellipse id="prT" cy="2" ry="5" fill="#ef6c00" opacity=".45"/>
+      <ellipse id="prL" cy="2" ry="5" fill="#1565c0" opacity=".45"/>
+      <path id="cop" d="M0,6 l-5,8 h10z" fill="#1c2b1c"/>
+      <line x1="22" y1="-6.5" x2="22" y2="0" stroke="#d7a86e" stroke-width="2.4"/>
+      <path id="trail" fill="none" stroke="#ff9800" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".4"/>
+      <!-- legs -->
+      <path id="legT" fill="none" stroke="#37474f" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+      <path id="legL" fill="none" stroke="#455a64" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+      <line id="shoeT" stroke="#fafafa" stroke-width="8" stroke-linecap="round"/>
+      <line id="shoeL" stroke="#fafafa" stroke-width="8" stroke-linecap="round"/>
+      <line id="shoeT2" stroke="#90a4ae" stroke-width="2" stroke-linecap="round"/>
+      <line id="shoeL2" stroke="#90a4ae" stroke-width="2" stroke-linecap="round"/>
+      <line id="belt" stroke="#263238" stroke-width="15" stroke-linecap="round"/>
+      <!-- torso -->
+      <polygon id="torso" fill="#1e88e5" stroke="#1e88e5" stroke-width="15" stroke-linejoin="round"/>
+      <line id="neck" stroke="#e8b98a" stroke-width="9" stroke-linecap="round"/>
+      <!-- arms behind club? trail arm -->
+      <path id="armTu" fill="none" stroke="#1976d2" stroke-width="11" stroke-linecap="round"/>
+      <path id="armTf" fill="none" stroke="#e8b98a" stroke-width="8.5" stroke-linecap="round"/>
+      <!-- club -->
+      <line id="shaft" stroke="#37474f" stroke-width="2.2" stroke-linecap="round"/>
+      <line id="grip" stroke="#212121" stroke-width="4.2" stroke-linecap="round"/>
+      <ellipse id="chead" rx="11" ry="6" fill="#212121"/>
+      <path id="armLu" fill="none" stroke="#1e88e5" stroke-width="11" stroke-linecap="round"/>
+      <path id="armLf" fill="none" stroke="#efc69a" stroke-width="8.5" stroke-linecap="round"/>
+      <circle id="handT" r="5" fill="#e8b98a"/>
+      <circle id="handL" r="5.5" fill="#fff" stroke="#cfd8dc"/>
+      <g id="head"><circle r="13" fill="#efc69a"/><path d="M-13.5,-2 A13.5,13.5 0 0 1 13.5,-2 Z" fill="#1b5e20"/><path d="M-1,-3 h19" stroke="#1b5e20" stroke-width="3" stroke-linecap="round"/></g>
+      <circle id="flash" r="6" fill="none" stroke="#ffca28" stroke-width="3"/>
+      <circle id="ball" r="4.5" fill="#fff" stroke="#9e9e9e" stroke-width="1"/>
+    </g>
+  </svg>
+  <div class="hint"><span id="hint"></span></div>
+  <div class="tclock" id="tclock">0.00 วิ</div>
+</div>
+
+<div class="card">
+  <div class="seg" id="modeSeg">
+    <button data-m="good" class="on">✅ ท่าที่ถูก</button>
+    <button data-m="bad">❌ กระชากมือลง</button>
+  </div>
+  <div class="lbl">น้ำหนักอยู่ที่เท้าไหน</div>
+  <div class="wbar"><div class="wl" id="wl"></div><div class="wr" id="wr"></div></div>
+  <div class="wlab"><span id="wlabL"></span><span id="wlabR"></span></div>
+
+  <div class="ctrl">
+    <button id="prev" title="ท่าก่อนหน้า">⏮</button>
+    <button id="play" class="play">⏸ หยุด</button>
+    <button id="next" title="ท่าถัดไป">⏭</button>
+    <button id="snd" title="เสียงจังหวะ">🔇</button>
+  </div>
+  <input type="range" id="scrub" min="-0.5" max="2.6" step="0.001" value="-0.5" aria-label="เลื่อนเวลา">
+  <div class="tbar" id="tbar"></div>
+  <div class="lbl">ความเร็วในการเล่น</div>
+  <div class="seg" id="spdSeg">
+    <button data-s="1">จริง 1x</button><button data-s="0.5">½x</button><button data-s="0.25" class="on">¼x</button><button data-s="0.1">สโลว์</button>
+  </div>
+  <div class="lbl">ฉันตี</div>
+  <div class="seg" id="handSeg"><button data-h="r" class="on">มือขวา</button><button data-h="l">มือซ้าย</button></div>
+</div>
+
+<div class="card ph" id="ph"></div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>แรงจากส่วนไหน</h2>
+    <div class="meter"><div class="mt"><span>ขา + สะโพก</span><b id="eLv"></b></div><div class="mb"><i id="eL" style="background:#ef6c00"></i></div></div>
+    <div class="meter"><div class="mt"><span>ลำตัว + ไหล่</span><b id="eTv"></b></div><div class="mb"><i id="eT" style="background:#1e88e5"></i></div></div>
+    <div class="meter"><div class="mt"><span>แขน + มือ</span><b id="eAv"></b></div><div class="mb"><i id="eA" style="background:#8e24aa"></i></div></div>
+    <p class="muted" style="margin:6px 0 0">ตัวเลขเป็นภาพประกอบเพื่อเทียบสัดส่วน ไม่ใช่ค่าที่วัดจริง</p>
+  </div>
+  <div class="card">
+    <h2>มองจากด้านบน</h2>
+    <svg viewBox="-60 -62 120 124" style="width:100%;display:block">
+      <g id="topv">
+        <circle r="52" fill="#f1f6f1" stroke="#c8d6c8" stroke-dasharray="3 3"/>
+        <line x1="-56" y1="34" x2="56" y2="34" stroke="#bbb" stroke-dasharray="4 3"/>
+        <path d="M44,34 l-7,-4 v8z" fill="#999"/>
+        <circle cx="0" cy="40" r="3.5" fill="#fff" stroke="#999"/>
+        <line id="tvHip" stroke="#ef6c00" stroke-width="6" stroke-linecap="round"/>
+        <line id="tvSh" stroke="#1e88e5" stroke-width="5" stroke-linecap="round"/>
+        <line id="tvChest" stroke="#1e88e5" stroke-width="2.5" marker-end="url(#arr)"/>
+        <circle r="8" fill="#efc69a"/>
+      </g>
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="#1e88e5"/></marker></defs>
+      <text id="tvTarget" x="56" y="50" font-size="9" fill="#888" text-anchor="end">ไปทางเป้า</text>
+    </svg>
+    <div class="legend"><span><i style="background:#1e88e5"></i>ไหล่ <b id="tvShv"></b></span><span><i style="background:#ef6c00"></i>สะโพก <b id="tvHipv"></b></span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>ความเร็วหัวไม้ (ไม้ไปเร็วสุดตรงไหน)</h2>
+  <svg id="spd" viewBox="0 0 300 108" style="width:100%;display:block">
+    <line x1="10" y1="92" x2="292" y2="92" stroke="#ccd"/>
+    <g id="spdMarks"></g>
+    <path id="spdBad" fill="none" stroke="#c62828" stroke-width="2" stroke-dasharray="5 3"/>
+    <path id="spdGood" fill="none" stroke="#2e7d32" stroke-width="2.5"/>
+    <line id="spdCur" y1="6" y2="92" stroke="#1c2b1c" stroke-width="1"/>
+    <circle id="spdDot" r="4" fill="#1c2b1c"/>
+  </svg>
+  <div class="legend"><span><i style="background:#2e7d32"></i>ท่าที่ถูก</span><span><i style="background:#c62828"></i>กระชากมือ</span></div>
+  <p class="muted" id="spdNote" style="margin:6px 0 0"></p>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>ทิศทางลูก</h2>
+    <svg viewBox="0 0 100 150" style="width:100%;display:block;max-height:220px">
+      <g id="flightG">
+        <rect x="22" y="0" width="56" height="150" rx="26" fill="#a5d6a7"/>
+        <rect x="38" y="4" width="24" height="18" rx="9" fill="#c8e6c9"/>
+        <line x1="50" y1="140" x2="50" y2="6" stroke="#fff" stroke-dasharray="3 4"/>
+        <path id="fly" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        <circle id="flyBall" r="3" fill="#fff" stroke="#777" stroke-width=".6"/>
+      </g>
+    </svg>
+  </div>
+  <div class="card"><h2>จังหวะ</h2><div id="tempo"></div></div>
+</div>
+
+<div class="card plist"><h2>ท่าทั้งหมด (กดเพื่อดูท่านั้น)</h2><div id="plist"></div></div>
+
+<div class="card qa">
+  <h2>⏱ ต้องหันหลังค้างไว้นานแค่ไหน</h2>
+  <p class="big">ไม่ต้องค้าง</p>
+  <p>ขึ้นไม้ใช้เวลาประมาณ <b>0.75–0.8 วินาที</b> ลงไม้จนถึงลูกประมาณ <b>0.25 วินาที</b> คิดเป็นสัดส่วน <b>3 : 1</b> ตอนซ้อมให้นับในใจว่า "หนึ่ง-สอง-สาม" ระหว่างขึ้น แล้ว "สี่" ตอนตี</p>
+  <p>สะโพกกับขาเริ่มกลับทางเป้า <b>ก่อน</b>ไม้จะขึ้นถึงท็อปเล็กน้อย ไม้จึงดูเหมือนหยุดนิ่งไปชั่วครู่ ทั้งที่ตัวกำลังเริ่มลงแล้ว</p>
+  <button class="btn" data-jump="good:3">ดูท่าท็อปสวิง</button>
+</div>
+
+<div class="card qa">
+  <h2>💪 ต้องกระชากมือลงแรงแค่ไหน</h2>
+  <p class="big">ไม่ต้องกระชาก</p>
+  <p>ตอนเริ่มลงไม้ แขนกับมือใช้แรงแค่ประมาณ <b>20–30%</b> ส่วนที่ออกแรงคือเท้าซ้ายที่กดพื้น เข่าซ้ายที่ดันไปทางเป้า และสะโพกที่หมุนเปิด แขนแค่ตกลงมาตาม ความเร็วจะค่อยๆ เพิ่มขึ้นจนสูงสุด<b>ตอนไม้ผ่านลูก</b> ไม่ใช่ตอนเริ่มลง</p>
+  <p>ถ้ากระชากมือตั้งแต่ท็อป มุมข้อมือจะหายเร็วเกินไป (casting) ไหล่ขวาพุ่งออก ไม้เข้าลูกจากด้านนอก ผลคือลูกสไลซ์และตีได้ไม่ไกล ดูเส้นสีแดงในกราฟความเร็วด้านบนประกอบ</p>
+  <p>ภาพรวมทั้งสวิงให้ใช้แรงประมาณ <b>80%</b> ของเต็มที่ และจับกริปแน่นแค่ <b>4–5 จาก 10</b></p>
+  <button class="btn" data-jump="good:4">ดูท่าที่ถูก</button> <button class="btn" data-jump="bad:4" style="background:#ffebee;color:#c62828">ดูแบบกระชากมือ</button>
+</div>
+
+<div class="card">
+  <h2>⚖️ ถ่ายน้ำหนัก (คนตีขวา)</h2>
+  <table>
+    <tr><th class="l">ช่วง</th><th>เท้าขวา</th><th>เท้าซ้าย</th></tr>
+    <tr><td class="l">ท่าตั้ง</td><td>55–60%</td><td>40–45%</td></tr>
+    <tr><td class="l">เริ่มดึงไม้</td><td>60–65%</td><td>35–40%</td></tr>
+    <tr><td class="l">ท็อปสวิง</td><td>75–80%</td><td>20–25%</td></tr>
+    <tr><td class="l">เปลี่ยนทิศ</td><td>~50%</td><td>~50%</td></tr>
+    <tr><td class="l">อิมแพ็ค</td><td>20–30%</td><td>70–80%</td></tr>
+    <tr><td class="l">ฟินิช</td><td>0–10%</td><td>90–100%</td></tr>
+  </table>
+  <p class="muted">ตอนท็อป น้ำหนักต้องอยู่ด้านในส้นเท้าขวา ห้ามหลุดออกนอกเท้า คนตีซ้ายให้สลับซ้ายขวา</p>
+</div>
+
+<div class="card qa">
+  <h2>🏋️ ท่าซ้อม</h2>
+  <p><b>Step drill</b> (ถ่ายน้ำหนักไม่เป็น): ยืนเท้าชิด ตอนขึ้นไม้ให้ก้าวเท้าซ้ายไปทางเป้า แล้วค่อยตีลง</p>
+  <p><b>Pump drill</b> (ชอบกระชากมือ): ขึ้นถึงท็อป ลงมาครึ่งทางแล้วกลับขึ้นไป 2 รอบ รอบที่ 3 ค่อยตีจริง</p>
+  <p><b>นับจังหวะ</b> (จังหวะเร็วไป): เปิดเสียงจังหวะ 🔊 ในแอปนี้ที่ความเร็ว 1x แล้วสวิงตามเสียง 3 จังหวะ คือ เริ่ม ท็อป และตี</p>
+  <p><b>Feet together</b> (ทรงตัวไม่ดี): ยืนเท้าชิดแล้วตีด้วยแรง 50–60% บังคับให้ตัวหมุนแทนการโยก</p>
+</div>
+
+</main>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const R = Math.PI / 180;
+const SPINE = 62, SH = 21, HIP = 13, UARM = 35, FARM = 35, BALL = { x: 22, y: -11 };
+
+// ---------- ท่าทาง (keyframes) ----------
+// px,py ตำแหน่งสะโพก · hr/sr หมุนสะโพก/ไหล่ (+ = หันหลังให้เป้า) · tilt เอียงลำตัว (+ = หัวไปทางเท้าหลัง)
+// w = % น้ำหนักบนเท้าหน้า · a = มุมแขนซ้าย · g = มุมก้านไม้ · reach = ระยะไหล่ถึงมือ · cl = ความยาวไม้ที่เห็น
+// lift = ยกส้นเท้าหลัง · kL/kT = เข่า · eL/eT/eA = แรงจาก ขา / ลำตัว / แขน (0-100)
+const BACK = [
+  { t: 0, px: -2, py: -92, hr: 0, sr: 0, tilt: 8, w: 42, a: 6, g: -9, reach: 67, cl: 84, lift: 0, kL: 0, kT: 0, eL: 0, eT: 0, eA: 0 },
+  { t: 0.30, px: -5, hr: 12, sr: 30, tilt: 9, w: 35, a: 35, g: 90, reach: 66, cl: 100, eL: 15, eT: 20, eA: 15 },
+  { t: 0.55, px: -7, hr: 35, sr: 70, tilt: 11, w: 28, a: 90, g: 180, reach: 64, cl: 102, kL: -5 },
+  { t: 0.72, px: -8, py: -93, hr: 45, w: 22, kL: -8, kT: -1, eL: 35 },
+  { t: 0.80, sr: 90, tilt: 12, a: 138, g: 262, reach: 58, cl: 105, eT: 30, eA: 20 },
+];
+const GOOD = BACK.concat([
+  { t: 0.80, px: -4, hr: 40, w: 30 },
+  { t: 0.90, px: 4, py: -91, hr: 15, w: 55, sr: 65, tilt: 14, a: 120, g: 245, reach: 60, kL: 2, kT: 3, eL: 85, eT: 55, eA: 25 },
+  { t: 0.97, px: 8, py: -90, hr: 0, w: 68, sr: 40, tilt: 16, a: 90, g: 195, reach: 64, eT: 85, eA: 40 },
+  { t: 1.02, px: 10, hr: -20, w: 74, sr: 20, tilt: 17, a: 50, g: 95, reach: 66, cl: 100, eA: 60 },
+  { t: 1.06, px: 11, py: -90, hr: -38, w: 78, sr: 0, tilt: 18, a: -2, g: -3, reach: 67, cl: 84, lift: 0, kL: 4, kT: 8, eL: 100, eT: 100, eA: 75 },
+  { t: 1.10, px: 12, hr: -55, w: 83, sr: -35, tilt: 15, a: -38, g: -95, reach: 66, cl: 90, lift: 0.3 },
+  { t: 1.20, px: 13, hr: -80, w: 90, sr: -80, tilt: 6, a: -110, g: -195, reach: 60, cl: 92, lift: 1, kT: 14, eL: 40, eT: 40, eA: 30 },
+  { t: 1.55, px: 14, py: -96, hr: -95, w: 95, sr: -105, tilt: -2, a: -170, g: -320, reach: 46, cl: 95, lift: 1, kL: 3, kT: 16, eL: 0, eT: 0, eA: 0 },
+]);
+const BAD = BACK.concat([
+  { t: 0.80, px: -8, hr: 45, w: 22 },
+  { t: 0.87, px: -6, hr: 30, w: 30, sr: 40, tilt: 6, a: 115, g: 200, reach: 62, kL: -4, kT: 0, eL: 25, eT: 75, eA: 100 },
+  { t: 0.93, px: -4, hr: 15, w: 36, sr: 15, tilt: 8, a: 82, g: 125, reach: 66, eA: 100 },
+  { t: 0.98, px: -2, hr: 0, w: 42, sr: -5, tilt: 12, a: 42, g: 45, reach: 66, cl: 96 },
+  { t: 1.03, px: 0, py: -91, hr: -15, w: 46, sr: -28, tilt: 16, a: 2, g: -22, reach: 66, cl: 84, lift: 0, kL: 0, kT: 2, eL: 45, eT: 70, eA: 70 },
+  { t: 1.09, px: 0, hr: -35, w: 50, sr: -55, tilt: 20, a: -45, g: -95, reach: 60, cl: 90 },
+  { t: 1.20, px: -1, hr: -50, w: 54, sr: -78, tilt: 22, a: -110, g: -195, reach: 52, cl: 92, lift: 0.2, kT: 5, eL: 20, eT: 30, eA: 30 },
+  { t: 1.45, px: -2, py: -91, hr: -58, w: 56, sr: -88, tilt: 22, a: -150, g: -295, reach: 44, cl: 95, lift: 0.3, kT: 6, eL: 0, eT: 0, eA: 0 },
+]);
+
+const PH_BACK = [
+  { t: 0, at: 0, n: '1. ท่าตั้ง', en: 'Setup', pts: ['ยืนกว้างกว่าไหล่เล็กน้อย วางลูกในแนวด้านในส้นเท้าซ้าย', 'น้ำหนักอยู่เท้าขวา <b>55–60%</b>', 'เอียงลำตัวไปทางขวาเล็กน้อย ศีรษะอยู่หลังลูก', 'จับกริปแน่นแค่ <b>4–5 จาก 10</b>'] },
+  { t: 0.12, at: 0.30, n: '2. เริ่มดึงไม้', en: 'Takeaway', pts: ['ไหล่ แขน และไม้ออกไปพร้อมกันเป็นชิ้นเดียว ไม่ใช้ข้อมือดึง', 'ไม้ขนานพื้น ปลายหัวไม้ชี้ฟ้า', 'น้ำหนักเริ่มไหลไปเท้าขวา ~65%'] },
+  { t: 0.42, at: 0.55, n: '3. ขึ้นไม้', en: 'Backswing', pts: ['แขนซ้ายขนานพื้น ข้อมือเริ่มหักจนไม้ตั้งขึ้น', 'เข่าขวางอไว้เท่าเดิม ไม่เหยียดตรง', 'หมุนตัวอยู่บนเท้าขวา ไม่โยกออกนอกเท้า'] },
+  { t: 0.77, at: 0.80, n: '4. ท็อปสวิง', en: 'Top', pts: ['ไหล่หมุน <b>~90°</b> สะโพก <b>~45°</b> หลังหันหาเป้า', 'น้ำหนักอยู่ด้านในส้นเท้าขวา <b>75–80%</b>', '<b>ไม่ต้องค้าง</b> สะโพกเริ่มกลับตั้งแต่ ~0.72 วิ ก่อนไม้จะขึ้นถึงท็อป'] },
+];
+const PH_GOOD = PH_BACK.concat([
+  { t: 0.83, at: 0.90, n: '5. เปลี่ยนทิศ', en: 'Transition', pts: ['เท้าซ้ายกดพื้น เข่าซ้ายดันไปทางเป้า น้ำหนักกลับมาครึ่งต่อครึ่ง', 'สะโพกเปิดก่อน แขนแค่ <b>ตกลงมาตามแรงโน้มถ่วง</b>', 'แขนและมือใช้แรงแค่ <b>~20–30%</b> ห้ามกระชาก', 'มุมข้อมือ (lag) ยังเก็บไว้'] },
+  { t: 0.95, at: 0.97, n: '6. ลงไม้', en: 'Downswing', pts: ['แขนซ้ายขนานพื้น ไม้ยังตั้งอยู่ มุมข้อมือยังครบ', 'ศอกขวาตกลงมาแนบสีข้าง', 'ความเร็วกำลังเพิ่มขึ้นเรื่อยๆ'] },
+  { t: 1.045, at: 1.06, n: '7. อิมแพ็ค', en: 'Impact', pts: ['สะโพกเปิด <b>~40°</b> ไหล่เกือบสแควร์', 'น้ำหนักอยู่เท้าซ้าย <b>75–80%</b>', 'ศีรษะยังอยู่หลังลูก ตีขณะไม้กำลังเคลื่อนขึ้น +2° ถึง +5°', 'หัวไม้ <b>เร็วที่สุดตรงนี้</b>'] },
+  { t: 1.08, at: 1.10, n: '8. ปล่อยไม้', en: 'Release', pts: ['แขนทั้งสองเหยียดยาวไปทางเป้า', 'แขนขวาไขว้ข้ามแขนซ้ายเอง ถ้าไม่เกร็งก็ไม่ต้องบังคับ'] },
+  { t: 1.30, at: 1.55, n: '9. ฟินิช', en: 'Finish', pts: ['น้ำหนักอยู่เท้าซ้าย <b>90% ขึ้นไป</b> เท้าขวาเหลือแค่ปลายเท้าแตะพื้น', 'หัวเข็มขัดหันไปทางเป้า', 'ยืนนิ่งได้ 3 วินาที'] },
+]);
+const PH_BAD = PH_BACK.concat([
+  { t: 0.81, at: 0.87, n: '5. กระชากมือ ❌', en: 'Over the top', pts: ['มือกับแขนออกแรงเต็มที่ตั้งแต่ท็อป', 'น้ำหนักยังค้างอยู่เท้าขวา สะโพกไม่นำ', 'ไหล่ขวาพุ่งออก ไม้จะเข้าลูกจากด้านนอก'] },
+  { t: 0.91, at: 0.93, n: '6. ปล่อยข้อมือเร็ว ❌', en: 'Casting', pts: ['มุมข้อมือหายไปตั้งแต่ครึ่งทาง', 'หัวไม้ไปเร็วสุด <b>ก่อน</b>ถึงลูก พอถึงลูกจริงก็ช้าลงแล้ว'] },
+  { t: 1.015, at: 1.03, n: '7. อิมแพ็ค ❌', en: 'Impact', pts: ['ไหล่เปิดไปก่อน ไม้เข้าจากนอกเข้าใน หน้าไม้เปิด ลูกจึงสไลซ์', 'น้ำหนักยังอยู่หลัง (~50/50)', 'ความเร็วหัวไม้ตอนกระทบลูกต่ำกว่าท่าที่ถูก'] },
+  { t: 1.15, at: 1.45, n: '8. ฟินิชเสียหลัก ❌', en: 'Finish', pts: ['น้ำหนักค้างอยู่เท้าหลัง ยืนนิ่งไม่ได้', 'ลำตัวเอนไปด้านหลัง'] },
+]);
+
+const HINTS = {
+  good: [[0.68, 0.80, 'สะโพกเริ่มกลับแล้ว ทั้งที่ไม้ยังขึ้นไม่สุด'], [0.80, 0.84, 'ท็อป: ไม่ค้าง ลงต่อทันที'], [0.84, 0.96, 'ช่วงล่างนำ แขนแค่ตกลงมา (แรงแขน ~25%)'], [0.96, 1.045, 'มุมข้อมือยังเก็บไว้'], [1.045, 1.09, '💥 หัวไม้เร็วสุดตรงลูก'], [1.45, 9, 'ยืนนิ่ง 3 วินาที']],
+  bad: [[0.80, 0.92, '❌ กระชากด้วยแขนและมือเต็มแรง'], [0.92, 1.01, '❌ มุมข้อมือหาย ความเร็วหมดก่อนถึงลูก'], [1.01, 1.08, '❌ หน้าไม้เปิด เข้าจากนอก → สไลซ์'], [1.25, 9, '❌ น้ำหนักค้างหลัง เสียหลัก']],
+};
+
+function mono(pts) { // monotone cubic: ลื่นไหล ไม่เกินค่าที่กำหนด
+  pts.sort((p, q) => p[0] - q[0]);
+  const n = pts.length, x = pts.map(p => p[0]), y = pts.map(p => p[1]), d = [], m = new Array(n).fill(0);
+  for (let i = 0; i < n - 1; i++) d[i] = (y[i + 1] - y[i]) / (x[i + 1] - x[i]);
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] * d[i] <= 0) continue;
+    const h0 = x[i] - x[i - 1], h1 = x[i + 1] - x[i], w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
+    m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
+  }
+  return t => {
+    if (n === 1 || t <= x[0]) return y[0];
+    if (t >= x[n - 1]) return y[n - 1];
+    let i = 0; while (t > x[i + 1]) i++;
+    const h = x[i + 1] - x[i], s = (t - x[i]) / h, s2 = s * s, s3 = s2 * s;
+    return (2 * s3 - 3 * s2 + 1) * y[i] + (s3 - 2 * s2 + s) * h * m[i] + (-2 * s3 + 3 * s2) * y[i + 1] + (s3 - s2) * h * m[i + 1];
+  };
+}
+function tracks(keys) {
+  const tr = {};
+  for (const k of keys) for (const c in k) if (c !== 't') (tr[c] = tr[c] || []).push([k.t, k[c]]);
+  for (const c in tr) tr[c] = mono(tr[c]);
+  return tr;
+}
+const MODES = {
+  good: { tr: tracks(GOOD), ph: PH_GOOD, top: 0.80, impact: 1.06, end: 1.55, hints: HINTS.good },
+  bad: { tr: tracks(BAD), ph: PH_BAD, top: 0.80, impact: 1.03, end: 1.45, hints: HINTS.bad },
+};
+const TSTART = -0.5, TEND = 2.6;
+
+// ---------- โครงร่างกาย ----------
+const pt = (a, d, l) => ({ x: a.x + d.x * l, y: a.y + d.y * l });
+function ik(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, dd = Math.min(d, UARM + FARM - 0.01);
+  const ux = dx / d, uy = dy / d, x = (UARM * UARM - FARM * FARM + dd * dd) / (2 * dd), h = Math.sqrt(Math.max(0, UARM * UARM - x * x));
+  const c1 = { x: a.x + ux * x - uy * h, y: a.y + uy * x + ux * h }, c2 = { x: a.x + ux * x + uy * h, y: a.y + uy * x - ux * h };
+  return c1.y > c2.y ? c1 : c2; // ศอกชี้ลงพื้น
+}
+function ev(m, t) { const v = {}; for (const c in m.tr) v[c] = m.tr[c](t); return v; }
+function solve(v, fixLen) {
+  const P = { x: v.px, y: v.py }, ts = v.tilt * R;
+  const s = { x: -Math.sin(ts), y: -Math.cos(ts) }, u = { x: Math.cos(ts), y: -Math.sin(ts) }, dn = { x: -s.x, y: -s.y };
+  const N = pt(P, s, SPINE), sr = v.sr * R, hr = v.hr * R;
+  const sw = SH * (0.35 + 0.65 * Math.abs(Math.cos(sr))), sd = SH * 0.35 * Math.sin(sr);
+  const LS = { x: N.x + u.x * sw + dn.x * sd, y: N.y + u.y * sw + dn.y * sd };
+  const TS = { x: N.x - u.x * sw - dn.x * sd, y: N.y - u.y * sw - dn.y * sd };
+  const hw = HIP * (0.45 + 0.55 * Math.abs(Math.cos(hr))), hd = 2.5 * Math.sin(hr);
+  const HL = { x: P.x + hw, y: P.y + hd }, HT = { x: P.x - hw, y: P.y - hd };
+  const AL = { x: 24, y: -8 }, AT = { x: -24 + v.lift * 4, y: -8 - v.lift * 9 };
+  const KL = { x: (HL.x + AL.x) / 2 + v.kL, y: (HL.y + AL.y) / 2 }, KT = { x: (HT.x + AT.x) / 2 + v.kT, y: (HT.y + AT.y) / 2 };
+  const a = v.a * R, g = v.g * R, ad = { x: -Math.sin(a), y: Math.cos(a) }, gd = { x: -Math.sin(g), y: Math.cos(g) };
+  const HDL = pt(LS, ad, v.reach), HDT = pt(HDL, gd, 8);
+  return { P, N, s, LS, TS, HL, HT, AL, AT, KL, KT, HDL, HDT, gd, EL: ik(LS, HDL), ET: ik(TS, HDT), C: pt(HDL, gd, fixLen || v.cl), B: pt(HDL, gd, -7), HEAD: pt(N, s, 19) };
+}
+
+// ---------- ความเร็วหัวไม้ ----------
+function headSpeed(m, t) { const h = 0.002, a = solve(ev(m, t - h), 105).C, b = solve(ev(m, t + h), 105).C; return Math.hypot(b.x - a.x, b.y - a.y) / (2 * h); }
+const SPD = {}; let SMAX = 0;
+for (const k in MODES) { // คำนวณแล้วเกลี่ยให้เรียบ (ค่าเฉลี่ยถ่วงน้ำหนัก ±0.03 วิ)
+  const raw = []; for (let i = 0; i <= 400; i++) raw.push(headSpeed(MODES[k], i * 0.004));
+  SPD[k] = raw.map((_, i) => { let a = 0, wsum = 0; for (let j = -8; j <= 8; j++) { const x = raw[i + j]; if (x === undefined) continue; const w = Math.exp(-j * j / 18); a += x * w; wsum += w; } return [i * 0.004, a / wsum]; });
+  if (k === 'good') SMAX = Math.max(...SPD[k].map(p => p[1]));
+}
+const spdAt = (k, t) => { const i = Math.max(0, Math.min(399, Math.floor(t / 0.004))), f = t / 0.004 - i, a = SPD[k][i][1], b = SPD[k][i + 1][1]; return a + (b - a) * Math.max(0, Math.min(1, f)); };
+const sx = t => 10 + (Math.min(Math.max(t, 0), 1.6) / 1.6) * 282, sy = s => 92 - (s / SMAX) * 82;
+for (const k in SPD) $(k === 'good' ? '#spdGood' : '#spdBad').setAttribute('d', SPD[k].map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join(''));
+const impPct = k => Math.round(spdAt(k, MODES[k].impact) / SMAX * 100);
+
+// ---------- สถานะ ----------
+const S = { mode: 'good', t: TSTART, playing: !matchMedia('(prefers-reduced-motion: reduce)').matches, speed: 0.25, lefty: false, sound: false };
+let actx = null, lastWall = 0, lastT = S.t;
+const f = p => p.x.toFixed(1) + ',' + p.y.toFixed(1);
+const at = (id, k, val) => document.getElementById(id).setAttribute(k, val);
+const line = (id, a, b) => { const e = document.getElementById(id); e.setAttribute('x1', a.x.toFixed(1)); e.setAttribute('y1', a.y.toFixed(1)); e.setAttribute('x2', b.x.toFixed(1)); e.setAttribute('y2', b.y.toFixed(1)); };
+const curPhase = () => { const ph = MODES[S.mode].ph; let i = 0; ph.forEach((p, j) => { if (S.t >= p.t - 1e-6) i = j; }); return i; };
+
+function draw() {
+  const m = MODES[S.mode], t = S.t, v = ev(m, t), k = solve(v);
+  // ขา เท้า
+  at('legT', 'd', `M${f(k.HT)}L${f(k.KT)}L${f(k.AT)}`);
+  at('legL', 'd', `M${f(k.HL)}L${f(k.KL)}L${f(k.AL)}`);
+  const L = v.lift;
+  line('shoeT', { x: -31 + L * 8, y: -3 - L * 11 }, { x: -18, y: -3 }); line('shoeL', { x: 17, y: -3 }, { x: 31, y: -3 });
+  line('shoeT2', { x: -31 + L * 8, y: 0.5 - L * 11 }, { x: -18, y: 0.5 }); line('shoeL2', { x: 17, y: 0.5 }, { x: 31, y: 0.5 });
+  line('belt', k.HT, k.HL);
+  at('torso', 'points', [k.HT, k.HL, k.LS, k.TS].map(f).join(' '));
+  line('neck', k.N, k.HEAD);
+  // แขน ไม้
+  at('armTu', 'd', `M${f(k.TS)}L${f(k.ET)}`); at('armTf', 'd', `M${f(k.ET)}L${f(k.HDT)}`);
+  at('armLu', 'd', `M${f(k.LS)}L${f(k.EL)}`); at('armLf', 'd', `M${f(k.EL)}L${f(k.HDL)}`);
+  line('shaft', k.B, k.C); line('grip', k.B, pt(k.HDL, k.gd, 12));
+  const ang = Math.atan2(k.gd.y, k.gd.x) / R + 90;
+  at('chead', 'transform', `translate(${f(k.C)}) rotate(${ang.toFixed(1)})`);
+  at('handL', 'cx', k.HDL.x.toFixed(1)); at('handL', 'cy', k.HDL.y.toFixed(1));
+  at('handT', 'cx', k.HDT.x.toFixed(1)); at('handT', 'cy', k.HDT.y.toFixed(1));
+  at('head', 'transform', `translate(${f(k.HEAD)}) rotate(${(-v.tilt).toFixed(1)})`);
+  // เส้นทางหัวไม้
+  const tr = []; for (let i = 0; i <= 12; i++) tr.push(solve(ev(m, t - i * 0.006)).C);
+  at('trail', 'd', t > 0.02 ? 'M' + tr.map(f).join('L') : '');
+  // ลูก
+  const dt = t - m.impact, ball = document.getElementById('ball'), fl = document.getElementById('flash');
+  if (dt < 0) { ball.setAttribute('cx', BALL.x); ball.setAttribute('cy', BALL.y); ball.style.display = ''; }
+  else { ball.setAttribute('cx', (BALL.x + 1500 * dt).toFixed(1)); ball.setAttribute('cy', (BALL.y - (S.mode === 'good' ? 430 : 560) * dt).toFixed(1)); ball.style.display = dt < 0.3 ? '' : 'none'; }
+  if (dt >= 0 && dt < 0.05) { fl.style.display = ''; fl.setAttribute('cx', BALL.x); fl.setAttribute('cy', BALL.y); fl.setAttribute('r', (5 + dt * 500).toFixed(1)); fl.setAttribute('opacity', (1 - dt / 0.05).toFixed(2)); }
+  else fl.style.display = 'none';
+  // น้ำหนัก
+  const w = Math.round(v.w), wt = 100 - w;
+  at('prT', 'cx', -24); at('prT', 'rx', (3 + 22 * wt / 100).toFixed(1));
+  at('prL', 'cx', 24); at('prL', 'rx', (3 + 22 * w / 100).toFixed(1));
+  at('cop', 'transform', `translate(${(-24 + 48 * w / 100).toFixed(1)},0)`);
+  const trailName = S.lefty ? 'เท้าซ้าย' : 'เท้าขวา', leadName = S.lefty ? 'เท้าขวา' : 'เท้าซ้าย';
+  const leftIsTrail = !S.lefty; // จอซ้าย = เท้าหลังเมื่อตีขวา
+  const lv = leftIsTrail ? wt : w, rv = leftIsTrail ? w : wt;
+  $('#wl').style.width = lv + '%'; $('#wr').style.width = rv + '%';
+  $('#wl').style.background = leftIsTrail ? '#ef6c00' : '#1565c0'; $('#wr').style.background = leftIsTrail ? '#1565c0' : '#ef6c00';
+  $('#wl').textContent = lv >= 12 ? lv + '%' : ''; $('#wr').textContent = rv >= 12 ? rv + '%' : '';
+  $('#wlabL').textContent = leftIsTrail ? `◀ ${trailName} (เท้าหลัง)` : `◀ ${leadName} (เท้าหน้า)`;
+  $('#wlabR').textContent = leftIsTrail ? `${leadName} (เท้าหน้า) ▶` : `${trailName} (เท้าหลัง) ▶`;
+  // แรง
+  for (const c of ['eL', 'eT', 'eA']) { const x = Math.round(Math.max(0, Math.min(100, v[c]))); $('#' + c).style.width = x + '%'; $('#' + c + 'v').textContent = x + '%'; }
+  $('#eA').style.background = (S.mode === 'bad' && v.eA > 60) ? '#c62828' : '#8e24aa';
+  // มุมมองด้านบน
+  const rot = (deg, len) => { const r = deg * R; return [{ x: -Math.cos(r) * len, y: -Math.sin(r) * len }, { x: Math.cos(r) * len, y: Math.sin(r) * len }]; };
+  const [h1, h2] = rot(v.hr, 26), [s1, s2] = rot(v.sr, 38); line('tvHip', h1, h2); line('tvSh', s1, s2);
+  line('tvChest', { x: 0, y: 0 }, { x: -Math.sin(v.sr * R) * 30, y: Math.cos(v.sr * R) * 30 });
+  const dg = x => x >= 0 ? `หันหลัง ${Math.round(x)}°` : `เปิด ${Math.round(-x)}°`;
+  $('#tvShv').textContent = dg(v.sr); $('#tvHipv').textContent = dg(v.hr);
+  // กราฟความเร็ว
+  const ct = Math.max(0, Math.min(t, 1.6)), cs = spdAt(S.mode, ct);
+  at('spdCur', 'x1', sx(ct)); at('spdCur', 'x2', sx(ct)); at('spdDot', 'cx', sx(ct)); at('spdDot', 'cy', sy(cs));
+  at('spdDot', 'fill', S.mode === 'good' ? '#2e7d32' : '#c62828');
+  // ทิศทางลูก
+  const fly = document.getElementById('fly'), p = Math.max(0, Math.min(1, dt / 0.6));
+  fly.setAttribute('d', S.mode === 'good' ? 'M50,140 Q56,80 48,16' : 'M50,140 Q46,80 86,32');
+  const Lf = fly.getTotalLength(); fly.style.strokeDasharray = Lf; fly.style.strokeDashoffset = Lf * (1 - p);
+  const fp = fly.getPointAtLength(Lf * p); at('flyBall', 'cx', fp.x); at('flyBall', 'cy', fp.y);
+  // ข้อความ
+  const i = curPhase(), ph = m.ph[i];
+  if (i !== draw.lastPh || S.mode !== draw.lastMode) {
+    draw.lastPh = i; draw.lastMode = S.mode;
+    $('#ph').innerHTML = `<h3>${ph.n}<small>${ph.en}</small></h3><ul>${ph.pts.map(x => `<li>${x}</li>`).join('')}</ul><div class="stats"><div><b id="stW"></b>น้ำหนักเท้าหน้า</div><div><b id="stS"></b>ไหล่</div><div><b id="stH"></b>สะโพก</div></div>`;
+    document.querySelectorAll('#plist button').forEach((b, j) => b.classList.toggle('cur', j === i));
+  }
+  $('#stW').textContent = w + '%'; $('#stS').textContent = Math.round(v.sr) + '°'; $('#stH').textContent = Math.round(v.hr) + '°';
+  const hint = m.hints.find(h => t >= h[0] && t < h[1]), he = $('#hint');
+  he.textContent = hint ? hint[2] : ''; he.className = S.mode === 'bad' ? 'bad' : '';
+  $('#tclock').textContent = `${Math.max(0, Math.min(t, m.end)).toFixed(2)} วิ (เวลาจริง) · ${S.speed === 1 ? 'ความเร็วจริง' : 'ช้าลง ' + Math.round(1 / S.speed) + ' เท่า'}`;
+  $('#scrub').value = t;
+}
+
+// ---------- เสียงจังหวะ ----------
+function beep(freq) {
+  if (!S.sound || !actx) return;
+  const o = actx.createOscillator(), g = actx.createGain(), n = actx.currentTime;
+  o.frequency.value = freq; o.type = 'sine'; g.gain.setValueAtTime(0.0001, n); g.gain.exponentialRampToValueAtTime(0.4, n + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, n + 0.15);
+  o.connect(g).connect(actx.destination); o.start(n); o.stop(n + 0.16);
+}
+function checkBeeps(a, b) {
+  const m = MODES[S.mode];
+  [[0.001, 660], [m.top, 660], [m.impact, 990]].forEach(([bt, fq]) => { if (a < bt && b >= bt) beep(fq); });
+}
+
+// ---------- วนลูป ----------
+function loop(now) {
+  if (S.playing) {
+    const dt = Math.min(0.05, (now - (lastWall || now)) / 1000) * S.speed;
+    let nt = S.t + dt;
+    if (nt > TEND) { nt = TSTART; lastT = TSTART; }
+    checkBeeps(S.t, nt);
+    S.t = nt; draw();
+  }
+  lastWall = now;
+  requestAnimationFrame(loop);
+}
+function setPlaying(p) { S.playing = p; $('#play').textContent = p ? '⏸ หยุด' : '▶ เล่น'; }
+function jumpPhase(i) { const ph = MODES[S.mode].ph; i = Math.max(0, Math.min(ph.length - 1, i)); setPlaying(false); S.t = ph[i].at; draw(); }
+
+// ---------- ปุ่ม ----------
+function setMode(m) {
+  S.mode = m; draw.lastPh = -1;
+  document.querySelectorAll('#modeSeg button').forEach(b => { b.classList.toggle('on', b.dataset.m === m); b.classList.toggle('bad', b.dataset.m === 'bad'); });
+  document.body.classList.toggle('bad-mode', m === 'bad');
+  buildPhaseUI(); draw();
+}
+function buildPhaseUI() {
+  const m = MODES[S.mode];
+  $('#plist').innerHTML = m.ph.map((p, i) => `<button data-i="${i}"><span>${p.at.toFixed(2)} วิ</span>${p.n}</button>`).join('');
+  const pc = t => ((t - TSTART) / (TEND - TSTART) * 100).toFixed(2) + '%';
+  $('#tbar').innerHTML = `<div class="sg" style="left:${pc(0)};width:calc(${pc(m.top)} - ${pc(0)});background:#66bb6a"></div><div class="sg" style="left:${pc(m.top)};width:calc(${pc(m.impact)} - ${pc(m.top)});background:${S.mode === 'good' ? '#ef6c00' : '#c62828'}"></div><div class="sg" style="left:${pc(m.impact)};width:calc(${pc(m.end)} - ${pc(m.impact)});background:#90caf9"></div>`
+    + `<span class="tk" style="left:${pc(0.3)}">ขึ้นไม้</span><span class="tk" style="left:${pc(m.top)}">ท็อป</span><span class="tk" style="left:${pc(m.impact + 0.12)}">ตี</span><span class="tk" style="left:${pc(m.end)}">ฟินิช</span>`;
+  const up = m.top, down = m.impact - m.top;
+  $('#tempo').innerHTML = `<div class="meter"><div class="mt"><span>ขึ้นไม้</span><b>${up.toFixed(2)} วิ</b></div><div class="mb"><i style="width:100%;background:#66bb6a"></i></div></div>
+    <div class="meter"><div class="mt"><span>ลงไม้ถึงลูก</span><b>${down.toFixed(2)} วิ</b></div><div class="mb"><i style="width:${(down / up * 100).toFixed(0)}%;background:${S.mode === 'good' ? '#ef6c00' : '#c62828'}"></i></div></div>
+    <p style="margin:6px 0 0;font-size:15px">สัดส่วน <b>${(up / down).toFixed(1)} : 1</b> ${S.mode === 'good' ? '(มาตรฐาน ~3:1)' : '(ลงเร็วและแรงเกิน)'}</p>
+    <p class="muted" style="margin:4px 0 0">ค้างที่ท็อป: <b>0 วินาที</b></p>`;
+  $('#spdNote').innerHTML = `ตอนไม้กระทบลูก ท่าที่ถูกได้ความเร็ว <b>${impPct('good')}%</b> ของความเร็วสูงสุด ส่วนแบบกระชากมือได้เพียง <b style="color:#c62828">${impPct('bad')}%</b> เพราะความเร็วไปพีคก่อนถึงลูก (ภาพประกอบ)`;
+}
+function marks() {
+  const g = $('#spdMarks'), m = MODES.good, mb = MODES.bad;
+  g.innerHTML = `<line x1="${sx(m.top)}" x2="${sx(m.top)}" y1="8" y2="92" stroke="#bbb" stroke-dasharray="3 3"/><text x="${sx(m.top) - 3}" y="104" font-size="9" fill="#667" text-anchor="end">ท็อป</text>`
+    + `<line x1="${sx(m.impact)}" x2="${sx(m.impact)}" y1="8" y2="92" stroke="#2e7d32" stroke-dasharray="3 3"/><text x="${sx(m.impact) + 2}" y="104" font-size="9" fill="#2e7d32">ตีลูก</text>`
+    + `<line x1="${sx(mb.impact)}" x2="${sx(mb.impact)}" y1="8" y2="92" stroke="#c62828" stroke-dasharray="1 3"/>`
+    + `<text x="12" y="104" font-size="9" fill="#667">0 วิ</text><text x="290" y="104" font-size="9" fill="#667" text-anchor="end">1.6 วิ</text>`;
+}
+function setLefty(l) {
+  S.lefty = l;
+  document.querySelectorAll('#handSeg button').forEach(b => b.classList.toggle('on', (b.dataset.h === 'l') === l));
+  const tf = l ? 'scale(-1,1)' : '';
+  at('world', 'transform', tf); at('topv', 'transform', tf); at('flightG', 'transform', l ? 'translate(100,0) scale(-1,1)' : '');
+  at('tvTarget', 'x', l ? -56 : 56); at('tvTarget', 'text-anchor', l ? 'start' : 'end');
+  draw();
+}
+
+document.querySelectorAll('#modeSeg button').forEach(b => b.onclick = () => setMode(b.dataset.m));
+document.querySelectorAll('#spdSeg button').forEach(b => b.onclick = () => { S.speed = +b.dataset.s; document.querySelectorAll('#spdSeg button').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+document.querySelectorAll('#handSeg button').forEach(b => b.onclick = () => setLefty(b.dataset.h === 'l'));
+$('#play').onclick = () => { if (!S.playing && S.t >= TEND - 0.01) S.t = TSTART; setPlaying(!S.playing); };
+$('#prev').onclick = () => { const i = curPhase(), ph = MODES[S.mode].ph; jumpPhase(Math.abs(S.t - ph[i].at) < 1e-3 || S.t < ph[i].at ? i - 1 : i); };
+$('#next').onclick = () => { const i = curPhase(), ph = MODES[S.mode].ph; jumpPhase(S.t < ph[i].at - 1e-3 ? i : i + 1); };
+$('#snd').onclick = () => {
+  S.sound = !S.sound; $('#snd').textContent = S.sound ? '🔊' : '🔇'; $('#snd').classList.toggle('on', S.sound);
+  if (S.sound) { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); beep(880); } catch (e) { S.sound = false; } }
+};
+$('#scrub').oninput = e => { setPlaying(false); S.t = +e.target.value; draw(); };
+$('#plist').onclick = e => { const b = e.target.closest('button'); if (b) { jumpPhase(+b.dataset.i); window.scrollTo({ top: 0, behavior: 'smooth' }); } };
+document.querySelectorAll('[data-jump]').forEach(b => b.onclick = () => { const [m, i] = b.dataset.jump.split(':'); setMode(m); jumpPhase(+i); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+  if (e.key === ' ') { e.preventDefault(); $('#play').click(); } else if (e.key === 'ArrowRight') $('#next').click(); else if (e.key === 'ArrowLeft') $('#prev').click();
+});
+
+marks(); setMode('good'); setPlaying(S.playing); requestAnimationFrame(loop);
+</script>
+</body>
+</html>

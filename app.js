@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.6.0';
+const APPVER = '2.7.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -346,6 +346,7 @@ function rHome() {
   ${mg.length ? `<div class="card"><h2>🕘 แก๊งล่าสุดของฉัน</h2>${mg.map(g => `<div class="trow"><span><b>${esc(g.name)}</b><br><span class="muted">${thDate(g.date)} · ${g.code}</span></span><span style="display:flex;gap:6px"><button class="btn sec" data-act="open" data-v="${g.code}">เปิด</button><button class="x" data-act="forget" data-v="${g.code}">🗑</button></span></div>`).join('')}
     <button class="btn red full" data-act="forgetall">ลบรายการทั้งหมด</button></div>` : ''}
   <button class="btn sec full" data-act="hist">📚 ประวัติ & Handicap Index</button>
+  <a class="btn sec full" href="swing/">🏌️ สวิงไดรเวอร์ ทีละจังหวะ (แอนิเมชัน)</a>
   <p class="muted center" style="margin-top:16px">เวอร์ชัน ${APPVER}${MOCK ? ' · โหมดทดสอบ' : ''} · <a href="offline/" style="color:#1b5e20">แอปออฟไลน์ตัวเดิม</a></p>`;
 }
 function rCreate() {
