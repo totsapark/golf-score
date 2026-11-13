@@ -131,16 +131,16 @@ tr.me td{background:#f1f8e9}
 .pick{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:10px;background:#fff3e0;margin:6px 0;font-size:16px}
 /* map */
 #mapwrap{position:fixed;left:0;right:0;top:calc(54px + env(safe-area-inset-top));bottom:calc(62px + env(safe-area-inset-bottom));z-index:1}
-#map{position:absolute;inset:0;background:#7cb67c}
+#map{position:absolute;inset:0;background:#7cb67c;z-index:0}
 .mtop{position:absolute;top:8px;left:8px;right:8px;z-index:500;display:flex;gap:6px;align-items:stretch}
 .mbox{background:#fffffff0;border-radius:12px;padding:6px 10px;box-shadow:0 2px 8px #0003}
-.mhole{display:flex;align-items:center;gap:4px}.mhole button{border:0;background:#e3ece3;border-radius:8px;width:36px;height:36px;font-size:18px;font-weight:800;color:#1b5e20}
+.mhole{display:flex;align-items:center;gap:4px}.mhole button{border:0;background:#e3ece3;border-radius:8px;width:36px;height:36px;font-size:18px;font-weight:800;color:#1b5e20;padding:0;display:flex;align-items:center;justify-content:center;line-height:1}
 .mdist{flex:1;display:flex;justify-content:space-around;text-align:center}
 .mdist div{line-height:1.05}.mdist b{font-size:26px;color:#1b5e20;display:block}.mdist small{font-size:11px;color:#556}
 .mbot{position:absolute;bottom:10px;left:8px;right:8px;z-index:500;display:flex;gap:6px}
 .mbot .btn{flex:1;box-shadow:0 2px 8px #0004;padding:13px 6px}
 .mside{position:absolute;right:8px;top:72px;z-index:500;display:flex;flex-direction:column;gap:6px}
-.mside button{width:44px;height:44px;border-radius:12px;border:0;background:#fffffff0;font-size:20px;box-shadow:0 2px 6px #0003}
+.mside button{width:44px;height:44px;border-radius:12px;border:0;background:#fffffff0;font-size:20px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px #0003}
 .mside button.on{background:#1b5e20;color:#fff}
 .mlbl{background:#1b5e20;color:#fff;border-radius:8px;padding:2px 6px;font-size:12px;font-weight:700;white-space:nowrap;border:2px solid #fff}
 .mlbl.y{background:#fdd835;color:#222}.mlbl.w{background:#fff;color:#1b5e20;border-color:#1b5e20}
