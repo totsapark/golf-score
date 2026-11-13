@@ -6,7 +6,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.14.0';
+const APPVER = '2.15.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -161,6 +161,7 @@ function go(code) { if (!code) setActive(null); setUrl(code); CODE = code; route
 addEventListener('popstate', () => {
   const nc = (new URLSearchParams(location.search).get('g') || '').toUpperCase() || null;
   const keep = () => { const u = new URL(location.href); u.searchParams.set('g', CODE); history.pushState({}, '', u); };
+  if (window.__hvClose) { window.__hvClose(); if (UI.view === 'game' && CODE) keep(); return; } // ปิดมุมมองหลุมเต็มจอ
   const d = document.querySelector('.dlg');
   if (d && UI.view === 'game') { d.remove(); keep(); return; }
   if (UI.view === 'game' && CODE) { keep(); if (UI.tab !== 'hole') { UI.tab = 'hole'; jset(DEV, 'golf2_tab', 'hole'); render(); scrollTo(0, 0); } else toast('ยังอยู่ในแก๊ง · กลับหน้าแรกได้ที่แท็บ 👥 แก๊ง'); return; }
@@ -673,10 +674,10 @@ function clubStats() {
 let replayObj = null;
 function slimHoles(hs) { const o = {}; Object.entries(hs || {}).forEach(([h, x]) => { o[h] = { tee: x.tees?.Blue || x.tee || null, green: x.green || null, line: x.line || null }; }); return o; }
 function gameReplayData() {
-  const N = K.nHoles(G), pars = {}, scores = {};
-  for (let i = 0; i < N; i++) pars[hk(i)] = K.par(G, i);
-  K.players(G).forEach(p => { scores[p.id] = {}; for (let i = 0; i < N; i++) { const v = K.score(G, p.id, i); if (v != null) scores[p.id][hk(i)] = v; } });
-  return { N, holes: slimHoles(geoCache?.holes), pars, players: K.players(G).map(p => ({ id: p.id, name: p.name, color: p.color })), shots: G.shots || {}, scores, unit: PREF.unit, center: geoCache?.center || null };
+  const N = K.nHoles(G), pars = {}, scores = {}, si = {}, putts = {};
+  for (let i = 0; i < N; i++) { pars[hk(i)] = K.par(G, i); if (K.si(G, i)) si[hk(i)] = K.si(G, i); }
+  K.players(G).forEach(p => { scores[p.id] = {}; putts[p.id] = {}; for (let i = 0; i < N; i++) { const v = K.score(G, p.id, i); if (v != null) { scores[p.id][hk(i)] = v; putts[p.id][hk(i)] = K.ent(G, p.id, i).putt; } } });
+  return { N, holes: slimHoles(geoCache?.holes), pars, si, putts, players: K.players(G).map(p => ({ id: p.id, name: p.name, color: p.color })), shots: G.shots || {}, scores, unit: PREF.unit, center: geoCache?.center || null };
 }
 function mountReplay(data) {
   const el = document.getElementById('replay'); if (!el) return;
@@ -884,7 +885,7 @@ function saveRound() {
     players: K.players(G).map(p => { const s = K.stats(G, p.id); return { name: p.name.trim(), gross: s.gross, net: s.net, par: s.par, n: s.n, putts: s.putts, g: s.g, money: s.money, diff: s.n === K.nHoles(G) ? s.hcp : null }; }) };
   const d = gameReplayData(), ix = {}; d.players.forEach((p, n) => { ix[p.id] = 'p' + n; });
   const rk = o => { const x = {}; Object.entries(o || {}).forEach(([k, v]) => { if (ix[k]) x[ix[k]] = v; }); return x; };
-  r.rp = { N: d.N, holes: d.holes, pars: d.pars, center: d.center, players: d.players.map(p => ({ id: ix[p.id], name: p.name, color: p.color })), shots: rk(d.shots), scores: rk(d.scores) };
+  r.rp = { N: d.N, holes: d.holes, pars: d.pars, si: d.si, putts: rk(d.putts), center: d.center, players: d.players.map(p => ({ id: ix[p.id], name: p.name, color: p.color })), shots: rk(d.shots), scores: rk(d.scores) };
   const k = HIST.findIndex(x => x.rid === r.rid); if (k >= 0) HIST[k] = r; else HIST.push(r);
   HIST.sort((a, b) => a.date < b.date ? -1 : 1); jset(localStorage, 'golf2_hist', HIST); toast('บันทึกลงประวัติแล้ว ✓'); render();
 }

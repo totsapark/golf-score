@@ -52,6 +52,12 @@ module.exports = async t => {
   const titles = await H.$$eval('.card h2', hs => hs.map(h => h.textContent).join('|'));
   for (const k of ['วิเคราะห์ฟอร์ม', 'สกอร์สะสมรายหลุม', 'หลุมยาก', 'ไดรฟ์ & ลูกเข้ากรีน']) t.ok(`summary shows "${k}"`, titles.includes(k), titles);
   t.ok('breakdown total shown', (await H.$eval('.bkrow.tot', e => e.innerText)).includes('+11'));
+  await H.tap('.rp-full'); await H.waitForSelector('.hview');
+  const pills = await H.$$eval('.pill', ps => ps.map(x => x.innerText.replace(/\s+/g, ' ')));
+  t.ok('full-screen hole view: club + distance pills and putts at flag', pills.some(x => /^D \d+/.test(x)) && pills.some(x => /^P \d+ ฟุต/.test(x)) && pills.some(x => /พัตต์/.test(x)), pills);
+  t.ok('full-screen hole view: hole bar shows par', (await H.$eval('.hv-bar', e => e.innerText)).includes('Par'));
+  await H.tap('[data-hv=next]'); await H.tap('[data-hv=close]');
+  t.ok('full-screen hole view closes', !(await H.$('.hview')));
   await H.tap('[data-tab=gang]'); await H.tap('[data-act=home]'); await H.tap('[data-act=hist]'); await H.waitForTimeout(300);
   t.ok('history shows trend card', (await H.$$eval('.card h2', hs => hs.map(h => h.textContent).join('|'))).includes('แนวโน้มหลายรอบ'));
   t.ok('no page errors', !P.errs.length, P.errs);

@@ -351,7 +351,7 @@ export function createReplay(el, D, st, onState) {
   const fmt = m => Math.round(D.unit === 'y' ? m * 1.09361 : m), un = D.unit === 'y' ? 'หลา' : 'ม.';
   const sh = (pid, i) => Object.values(D.shots?.[pid]?.[hk(i)] || {}).filter(x => x && x.lat != null).sort((a, b) => a.t - b.t);
   if (!D.players.some(p => p.id === st.pid)) st.pid = (D.players.find(p => Object.keys(D.shots?.[p.id] || {}).length) || D.players[0])?.id;
-  el.innerHTML = `<div class="chips rp-p"></div><div class="chips rp-h"></div><div class="rp-map"></div><div class="rp-list"></div>`;
+  el.innerHTML = `<div class="chips rp-p"></div><div class="chips rp-h"></div><div class="rp-mw"><div class="rp-map"></div><button class="rp-full" data-rp="full">⛶ ดูเต็มจอ</button></div><div class="rp-list"></div>`;
   const map = L.map(el.querySelector('.rp-map'), { zoomControl: false, maxZoom: 21 }); map.attributionControl.setPrefix(false);
   L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21, attribution: 'Imagery © Esri' }).addTo(map);
   const layer = L.layerGroup().addTo(map); map.setView(D.center || [13.75, 100.5], D.center ? 15 : 6);
@@ -381,15 +381,97 @@ export function createReplay(el, D, st, onState) {
         pts.push([x.lat, x.lng]); parts.push(`<b>${esc(x.club)}</b>${nx ? ' ' + fmt(d) : ''}`);
       });
       const sc = D.scores?.[P.id]?.[hk(i)];
-      rows.push(`<div class="rp-row"><b>H${i + 1}</b> <span class="muted">Par ${D.pars?.[hk(i)] || '-'}${sc != null ? ' · ' + sc : ''}</span><br>${parts.join(' › ')}</div>`);
+      rows.push(`<div class="rp-row" data-rp="full" data-v="${i}"><b>H${i + 1}</b> <span class="muted">Par ${D.pars?.[hk(i)] || '-'}${sc != null ? ' · ' + sc : ''}</span><br>${parts.join(' › ')}</div>`);
     });
     el.querySelector('.rp-list').innerHTML = rows.join('');
     if (pts.length) map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [30, 40], paddingBottomRight: [120, 30], maxZoom: st.hole < 0 ? 17 : 19, animate: false });
     onState && onState(st);
   }
   el.addEventListener('click', e => { const b = e.target.closest('[data-rp]'); if (!b) return; e.stopPropagation();
+    if (b.dataset.rp === 'full') { const P = D.players.find(p => p.id === st.pid) || D.players[0], h = b.dataset.v != null ? +b.dataset.v : st.hole >= 0 ? st.hole : Math.max(0, [...Array(D.N).keys()].find(i => sh(P.id, i).length) ?? 0);
+      createHoleView(D, { pid: P.id, hole: h }); return; }
     if (b.dataset.rp === 'p') st.pid = b.dataset.v; else st.hole = +b.dataset.v; draw(); });
   setTimeout(() => { if (!el.isConnected) return; map.invalidateSize(); draw(); }, 30);
   let alive = true;
   return { destroy() { if (!alive) return; alive = false; try { map.stop(); map.off(); map.remove(); } catch (e) {} } };
+}
+
+// มุมมองหลุมเต็มจอ (ดูหลังตีจบ): หมุนให้ทีอยู่ล่าง กรีนอยู่บน · ป้าย "ไม้ | ระยะ" ทุกช็อต · จำนวนพัตต์ที่ธง
+const CAT_COLOR = { D: '#ffffff', FW: '#29b6f6', HY: '#26c6da', Iron: '#fdd835', Wedge: '#ab47bc', Putter: '#7e57c2' };
+function bearing(a, b) { const t = Math.PI / 180, y = Math.sin((b[1] - a[1]) * t) * Math.cos(b[0] * t), x = Math.cos(a[0] * t) * Math.sin(b[0] * t) - Math.sin(a[0] * t) * Math.cos(b[0] * t) * Math.cos((b[1] - a[1]) * t); return (Math.atan2(y, x) / t + 360) % 360; }
+export function createHoleView(D, st) {
+  const yd = D.unit === 'y', fmt = m => Math.round(yd ? m * 1.09361 : m), un = yd ? 'หลา' : 'ม.';
+  const sh = (pid, i) => Object.values(D.shots?.[pid]?.[hk(i)] || {}).filter(x => x && x.lat != null).sort((a, b) => a.t - b.t);
+  const ov = document.createElement('div'); ov.className = 'hview';
+  ov.innerHTML = `<div class="hv-wrap"><div class="hv-map"></div></div><div class="hv-empty" hidden>ไม่มีช็อตที่บันทึกในหลุมนี้</div>
+    <button class="hv-back" data-hv="close" aria-label="close">‹</button><div class="hv-who"></div>
+    <div class="hv-bar"><button data-hv="prev">‹</button><div class="hv-hole"><b class="hv-n"></b><span class="hv-ps"><span class="hv-par"></span><span class="hv-si"></span></span></div><button data-hv="next">›</button><div class="hv-sc"></div></div>`;
+  document.body.appendChild(ov);
+  const wrap = ov.querySelector('.hv-wrap'), mel = ov.querySelector('.hv-map');
+  const map = L.map(mel, { zoomControl: false, attributionControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, zoomSnap: 0, maxZoom: 21 });
+  L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21 }).addTo(map);
+  const layer = L.layerGroup().addTo(map); map.setView(D.center || [13.75, 100.5], 16);
+  let b = 0, size = 0;
+  function resize() {
+    const W = wrap.clientWidth, H = wrap.clientHeight, d = Math.ceil(Math.hypot(W, H)) + 4;
+    Object.assign(mel.style, { width: d + 'px', height: d + 'px', left: (W - d) / 2 + 'px', top: (H - d) / 2 + 'px' });
+    if (d !== size) { size = d; map.invalidateSize({ animate: false }); }
+  }
+  // วางทุกจุดให้พอดีจอ (คิดการหมุนแล้ว) เว้นที่ให้ปุ่มบน/แถบล่าง/ป้ายด้านขวา
+  function fit(pts) {
+    const W = wrap.clientWidth, H = wrap.clientHeight, pT = 96, pB = 130, pL = 34, pR = 150, aw = W - pL - pR, ah = H - pT - pB;
+    const a = -b * Math.PI / 180, R = (x, y, an) => [x * Math.cos(an) - y * Math.sin(an), x * Math.sin(an) + y * Math.cos(an)];
+    let z = 19, o, ex;
+    for (; z >= 12; z -= 0.25) {
+      const P = pts.map(q => map.project(q, z)); o = P[0];
+      const r = P.map(p => R(p.x - o.x, p.y - o.y, a)), xs = r.map(v => v[0]), ys = r.map(v => v[1]);
+      ex = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      if (ex[1] - ex[0] <= aw && ex[3] - ex[2] <= ah) break;
+    }
+    const cr = [(ex[0] + ex[1]) / 2 - (pL + aw / 2 - W / 2), (ex[2] + ex[3]) / 2 - (pT + ah / 2 - H / 2)], c = R(cr[0], cr[1], -a);
+    map.setView(map.unproject(L.point(o.x + c[0], o.y + c[1]), z), z, { animate: false });
+  }
+  const up = html => `<div style="transform:rotate(${b}deg);transform-origin:0 0">${html}</div>`;
+  const pin = (ll, html, z = 0) => L.marker(ll, { icon: L.divIcon({ className: '', iconSize: [0, 0], html: up(html) }), interactive: false, zIndexOffset: z }).addTo(layer);
+  function draw() {
+    const i = st.hole, g = D.holes?.[hk(i)] || {}, P = D.players.find(p => p.id === st.pid) || D.players[0];
+    const s = P ? sh(P.id, i) : [], par = D.pars?.[hk(i)], sc = P ? D.scores?.[P.id]?.[hk(i)] : null;
+    ov.querySelector('.hv-who').innerHTML = D.players.length > 1 ? D.players.map(p => `<button class="${p.id === P.id ? 'on' : ''}" data-hv="p" data-v="${p.id}">${esc(p.name)}</button>`).join('') : '';
+    ov.querySelector('.hv-n').textContent = i + 1;
+    ov.querySelector('.hv-par').textContent = par ? 'Par ' + par : '';
+    ov.querySelector('.hv-si').textContent = D.si?.[hk(i)] ? 'Hdcp ' + D.si[hk(i)] : '';
+    const d = sc != null && par ? sc - par : null;
+    ov.querySelector('.hv-sc').innerHTML = sc != null ? `<span class="hsc ${d <= -2 ? 'eg' : d === -1 ? 'bi' : d === 0 ? 'pa' : d === 1 ? 'bo' : 'db'}">${sc}</span>` : '';
+    ov.querySelector('.hv-empty').hidden = !!s.length;
+    const first = s[0] ? [s[0].lat, s[0].lng] : null, start = g.tee || first, end = g.green;
+    b = start && end ? bearing(start, end) : 0;
+    resize(); mel.style.transform = `rotate(${-b}deg)`;
+    layer.clearLayers();
+    const pts = [start, end, ...s.map(x => [x.lat, x.lng])].filter(Boolean);
+    if (!pts.length) { map.setView(D.center || [13.75, 100.5], 15, { animate: false }); return; }
+    if (g.tee && (!first || dist(g.tee, first) > 15)) pin(g.tee, '<span class="hv-tee">T</span>');
+    const putts = s.filter(x => x.club === 'Putter'), path = s.filter(x => x.club !== 'Putter').map(x => [x.lat, x.lng]);
+    if (end && path.length) path.push(end);
+    if (path.length > 1) { L.polyline(path, { color: '#000', weight: 7, opacity: .25, interactive: false }).addTo(layer); L.polyline(path, { color: '#fff', weight: 4, interactive: false }).addTo(layer); }
+    s.forEach((x, k) => {
+      const ll = [x.lat, x.lng], cat = clubCat(x.club), nx = s.slice(k + 1).find(y => y.club !== 'Putter' || x.club === 'Putter');
+      let txt;
+      if (x.club === 'Putter') { if (x !== putts[0] || !end) return; const f = dist(ll, end) * 3.28084; txt = `${Math.round(f)} <small>ฟุต</small>`; }
+      else { const to = nx && nx.club !== 'Putter' ? [nx.lat, nx.lng] : end; txt = to ? `${fmt(dist(ll, to))} <small>${un}</small>` : ''; }
+      L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2.5, fillColor: CAT_COLOR[cat] || '#fdd835', fillOpacity: 1, interactive: false }).addTo(layer);
+      pin(ll, `<span class="pill" style="left:14px;top:-18px"><b>${esc(x.club === 'Putter' ? 'P' : x.club)}</b>${txt ? `<span>${txt}</span>` : ''}</span>`, 100 + k);
+    });
+    if (end) { const n = putts.length || (sc != null && P ? D.putts?.[P.id]?.[hk(i)] : null);
+      pin(end, `<span class="pill flag" style="left:-12px;top:-50px"><b>🚩</b>${n != null && n !== '' ? `<span>${n} <small>พัตต์</small></span>` : ''}</span>`, 500); }
+    fit(pts);
+  }
+  function close() { if (!ov.isConnected) return; try { map.stop(); map.off(); map.remove(); } catch (e) {} ov.remove(); removeEventListener('resize', onR); if (window.__hvClose === close) window.__hvClose = null; }
+  const onR = () => { size = 0; draw(); }; addEventListener('resize', onR);
+  ov.addEventListener('click', e => { const t = e.target.closest('[data-hv]'); if (!t) return; e.stopPropagation(); const a = t.dataset.hv;
+    if (a === 'close') return close();
+    if (a === 'prev') st.hole = (st.hole - 1 + D.N) % D.N; else if (a === 'next') st.hole = (st.hole + 1) % D.N; else if (a === 'p') st.pid = t.dataset.v;
+    draw(); });
+  window.__hvClose = close;
+  setTimeout(draw, 0);
+  return { close };
 }
