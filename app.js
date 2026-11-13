@@ -5,7 +5,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.10.0';
+const APPVER = '2.11.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -67,13 +67,19 @@ function saveCache() { clearTimeout(cacheTimer); const code = CODE, g = G; cache
 function setIn(o, rel, v) { const ks = rel.split('/'); let x = o; ks.slice(0, -1).forEach(k => { if (typeof x[k] !== 'object' || x[k] === null) x[k] = {}; x = x[k]; }); const l = ks[ks.length - 1]; if (v === null || v === undefined) delete x[l]; else x[l] = JSON.parse(JSON.stringify(v)); }
 // เขียนข้อมูลแก๊ง: แสดงผลทันที → เก็บในคิวในเครื่อง → ส่งขึ้นเซิร์ฟเวอร์ (ปิดแอป/เน็ตหลุด ก็ส่งต่อเองเมื่อกลับมา)
 function gw(rel, v) {
+  if (rel.startsWith('meta/') && G && !isHost()) return; // ข้อมูลแก๊ง แก้ได้เฉพาะคนสร้าง
   OUT[rel] = { v: v ?? null, seq: Date.now() + Math.random() }; saveOutbox();
   if (G) { setIn(G, rel, v); saveCache(); refresh(); }
   push(rel);
 }
 function push(rel) {
   const e = OUT[rel], code = CODE; if (!e || !ST) return;
-  ST.set(`games/${code}/${rel}`, e.v).then(() => { if (CODE === code && OUT[rel] && OUT[rel].seq === e.seq) { delete OUT[rel]; saveOutbox(); } }).catch(() => {});
+  ST.set(`games/${code}/${rel}`, e.v).then(() => { if (CODE === code && OUT[rel] && OUT[rel].seq === e.seq) { delete OUT[rel]; saveOutbox(); } }).catch(err => {
+    // เซิร์ฟเวอร์ไม่ให้แก้ (ไม่ใช่ข้อมูลของเรา) → ทิ้งรายการนี้ แล้วดึงค่าจริงกลับมาแสดง
+    if (!/permission/i.test(err?.code || err?.message || '') || CODE !== code) return;
+    delete OUT[rel]; saveOutbox(); toast('แก้ได้เฉพาะข้อมูลของตัวเอง');
+    ST.get('games/' + code).then(g => { if (CODE === code && g) onGame(g); }).catch(() => {});
+  });
 }
 function flushOutbox() { Object.keys(OUT).forEach(push); }
 function refresh() {
@@ -441,7 +447,7 @@ async function doCreate() {
   const holes = +seg('c_holes'), cid = UI.pendGeo?.d?.cid || (course ? slug(course) : ''), lib = UI.pendGeo?.d?.lib || (cid ? UI.courses?.[cid] || UI.courses?.[slug(course)] : null);
   const meta = { code, course, cid, date: v('c_date') || today(), tee: document.querySelector('#c_tee .on')?.dataset.tee || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
     pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), money: document.getElementById('c_money').classList.contains('on'), host: UID, lunch: '', createdAt: Date.now() };
-  const pid = 'p' + Date.now().toString(36);
+  const pid = 'p' + Date.now().toString(36); meta.hostPid = pid;
   const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true } }, holes: {} };
   const pg = UI.pendGeo?.d, P = pg ? parsOf(pg) : { pars: lib?.pars || {}, si: lib?.si || {}, n: Object.keys(lib?.pars || {}).length };
   for (let i = 0; i < 18; i++) game.holes[hk(i)] = { par: +P.pars[hk(i)] || 4, si: P.si[hk(i)] || '' };
@@ -488,6 +494,7 @@ async function claim(pid, isNew) {
     const p = await ST.get(`games/${CODE}/players/${pid}`);
     if (p.uid && p.uid !== UID && !(await ask(`"${p.name}" ใช้อยู่ในเครื่องอื่น ย้ายมาใช้เครื่องนี้แทน?`))) return;
     await ST.update(`games/${CODE}/players/${pid}`, { uid: UID });
+    if (p.host) await ST.set(`games/${CODE}/meta/host`, UID).catch(() => {}); // คนสร้างแก๊งย้ายเครื่อง → สิทธิ์ตามมาด้วย
   }
   setId(CODE, { pid }); UI.tab = 'hole'; jset(DEV, 'golf2_tab', 'hole'); route();
 }

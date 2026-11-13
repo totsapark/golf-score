@@ -1,9 +1,73 @@
 {
   "rules": {
-    "games": { "$code": { ".read": "auth != null", ".write": "auth != null" } },
-    "locs": { "$code": { ".read": "auth != null", "$pid": { ".write": "auth != null" } } },
-    "geos": { "$code": { ".read": "auth != null", ".write": "auth != null" } },
-    "courses": { ".read": "auth != null", "$cid": { ".write": "auth != null" } },
-    "coursegeo": { "$cid": { ".read": "auth != null", ".write": "auth != null" } }
+    "games": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('meta/host').val() === auth.uid)",
+        "meta": {
+          ".write": "auth != null && data.parent().child('meta/host').val() === auth.uid",
+          "host": {
+            ".write": "auth != null && newData.val() === auth.uid && root.child('games/' + $code + '/players/' + data.parent().child('hostPid').val() + '/uid').val() === auth.uid"
+          }
+        },
+        "holes": {
+          ".write": "auth != null"
+        },
+        "players": {
+          "$pid": {
+            ".write": "auth != null && (data.parent().parent().child('meta/host').val() === auth.uid || (!data.exists() && newData.child('uid').val() === auth.uid) || data.child('uid').val() === auth.uid || newData.child('uid').val() === auth.uid)",
+            "host": {
+              ".validate": "newData.val() === data.val() || !root.child('games/' + $code).exists() || root.child('games/' + $code + '/meta/host').val() === auth.uid"
+            }
+          }
+        },
+        "scores": {
+          "$pid": {
+            ".write": "auth != null && (data.parent().parent().child('players/' + $pid + '/uid').val() === auth.uid || data.parent().parent().child('meta/host').val() === auth.uid)"
+          }
+        },
+        "shots": {
+          "$pid": {
+            ".write": "auth != null && (data.parent().parent().child('players/' + $pid + '/uid').val() === auth.uid || data.parent().parent().child('meta/host').val() === auth.uid)"
+          }
+        },
+        "pos": {
+          "$pid": {
+            ".write": "auth != null && (data.parent().parent().child('players/' + $pid + '/uid').val() === auth.uid || data.parent().parent().child('meta/host').val() === auth.uid)"
+          }
+        },
+        "draws": {
+          "$h": {
+            ".write": "auth != null && !data.exists() && data.parent().parent().child('players').exists()"
+          }
+        }
+      }
+    },
+    "locs": {
+      "$code": {
+        ".read": "auth != null",
+        "$pid": {
+          ".write": "auth != null && root.child('games/' + $code + '/players/' + $pid + '/uid').val() === auth.uid"
+        }
+      }
+    },
+    "geos": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "courses": {
+      ".read": "auth != null",
+      "$cid": {
+        ".write": "auth != null"
+      }
+    },
+    "coursegeo": {
+      "$cid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
   }
 }
