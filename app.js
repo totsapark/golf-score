@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.7.1';
+const APPVER = '2.8.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -93,6 +93,35 @@ document.addEventListener('visibilitychange', onResume);
 addEventListener('pageshow', onResume); addEventListener('focus', onResume); addEventListener('online', onResume);
 const ACTIVE_MS = 36 * 3600e3;
 function setActive(code) { jset(DEV, 'golf2_active', code ? { code, t: Date.now() } : null); }
+
+/* ---------- สแกน QR ในแอป (ใช้ได้ทั้ง iPhone/Android, แอปบนหน้าจอโฮมด้วย) ---------- */
+function loadScript(src) { return new Promise((res, rej) => { if (window.jsQR) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+function parseGangCode(t) {
+  try { const u = new URL(t); const g = u.searchParams.get('g'); if (g) return g.toUpperCase().slice(0, 6); } catch (e) {}
+  const m = String(t).trim().toUpperCase().match(/^[A-Z0-9]{6}$/); return m ? m[0] : null;
+}
+async function scanQR() {
+  let stream = null;
+  const d = dlg(`<p><b>📷 สแกน QR แก๊ง</b></p><div class="qrscan"><video playsinline muted autoplay></video><div class="qrframe"></div></div><p class="muted" id="qrmsg"></p><button class="btn red full" data-x="1">ปิด</button>`);
+  const stop = () => { if (stream) stream.getTracks().forEach(t => t.stop()); d.remove(); };
+  d.addEventListener('click', e => { if (e.target.closest('[data-x]')) stop(); });
+  try { await loadScript('vendor/jsQR.js'); stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); }
+  catch (e) { const m = d.querySelector('#qrmsg'); if (m) m.textContent = 'เปิดกล้องไม่ได้ · กดอนุญาตให้ใช้กล้อง หรือพิมพ์รหัสแก๊งแทน'; return; }
+  if (!d.isConnected) { stream.getTracks().forEach(t => t.stop()); return; }
+  const v = d.querySelector('video'); v.srcObject = stream; try { await v.play(); } catch (e) {}
+  const c = document.createElement('canvas'), x = c.getContext('2d', { willReadFrequently: true });
+  const tick = () => {
+    if (!d.isConnected) return;
+    if (v.readyState >= 2 && v.videoWidth) {
+      const k = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight)); c.width = v.videoWidth * k; c.height = v.videoHeight * k;
+      x.drawImage(v, 0, 0, c.width, c.height);
+      const r = window.jsQR(x.getImageData(0, 0, c.width, c.height).data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
+      if (r && r.data) { const code = parseGangCode(r.data); if (code) { stop(); toast('เจอแก๊ง ' + code + ' ✓'); go(code); return; } }
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
 
 /* ---------- boot / routing ---------- */
 async function boot() {
@@ -342,6 +371,7 @@ function rHome() {
   <div class="card center"><div style="font-size:52px">⛳</div><h2 style="font-size:20px">Golf Live</h2>
     <button class="btn full big-btn" data-act="create">🏌️ สร้างแก๊งใหม่</button></div>
   <div class="card"><h2>🔑 เข้าร่วมแก๊ง</h2>
+    <button class="btn full big-btn" data-act="scanqr" style="margin:0 0 10px">📷 สแกน QR</button>
     <div style="display:flex;gap:8px"><input id="jcode" maxlength="6" placeholder="รหัสแก๊ง" style="text-transform:uppercase;font-weight:700;letter-spacing:3px"><button class="btn" data-act="joincode" style="flex:none">เข้า</button></div></div>
   ${mg.length ? `<div class="card"><h2>🕘 แก๊งล่าสุดของฉัน</h2>${mg.map(g => `<div class="trow"><span><b>${esc(g.name)}</b><br><span class="muted">${thDate(g.date)} · ${g.code}</span></span><span style="display:flex;gap:6px"><button class="btn sec" data-act="open" data-v="${g.code}">เปิด</button><button class="x" data-act="forget" data-v="${g.code}">🗑</button></span></div>`).join('')}
     <button class="btn red full" data-act="forgetall">ลบรายการทั้งหมด</button></div>` : ''}
@@ -786,12 +816,13 @@ document.addEventListener('click', async e => {
   const a = t.dataset.act, v = t.dataset.v;
   const pid = UI.editPid || ME, i = UI.cur;
   switch (a) {
-    case 'sun': setPref('sun', !PREF.sun); applyPrefs(); render(); return;
+    case 'sun': setPref('sun', !PREF.sun); applyPrefs(); toast(PREF.sun ? '🌞 โหมดกลางแดด: เปิด (ตัวใหญ่ สีชัด)' : 'โหมดกลางแดด: ปิด'); render(); return;
     case 'wake': setPref('wake', !PREF.wake); keepAwake(); toast(PREF.wake ? '💡 กันจอดับ: เปิด' : 'กันจอดับ: ปิด'); render(); return;
     case 'home': go(null); return;
     case 'retry': route(); return;
     case 'create': UI.view = 'create'; UI.pendGeo = null; render(); return;
     case 'docreate': t.disabled = true; try { await doCreate(); } catch (er) { toast('สร้างไม่สำเร็จ: ' + er.message); } finally { if (t.isConnected) t.disabled = false; } return;
+    case 'scanqr': scanQR(); return;
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
     case 'hist': UI.view = 'hist'; render(); return;
