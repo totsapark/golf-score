@@ -6,7 +6,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.15.0';
+const APPVER = '2.16.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -406,8 +406,7 @@ function render() {
 function rNoCfg() {
   $app.innerHTML = `<div class="card"><h2>⚙️ ยังไม่ได้เชื่อมฐานข้อมูล</h2>
     <p>แอปออนไลน์ต้องใช้ Firebase (ฟรี) เป็นที่เก็บคะแนนกลาง เจ้าของแอปต้องใส่ค่าใน <code>config.js</code> ก่อน</p>
-    <a class="btn full" href="?mock=1">ลองโหมดทดสอบ (ข้อมูลอยู่ในเครื่องนี้เท่านั้น)</a>
-    <a class="btn sec full" href="offline/">ใช้แอปออฟไลน์ตัวเดิม</a></div>`;
+    <a class="btn full" href="?mock=1">ลองโหมดทดสอบ (ข้อมูลอยู่ในเครื่องนี้เท่านั้น)</a></div>`;
 }
 function rHome() {
   const mg = myGames();
@@ -422,7 +421,7 @@ function rHome() {
   <button class="btn sec full" data-act="hist">📚 ประวัติ & Handicap Index</button>
   <a class="btn sec full" href="golf-live-tutorial.mp4" target="_blank">▶️ วิดีโอแนะนำการใช้งาน</a>
   <div class="card" data-notr><h2>🌐 ภาษา / Language</h2><div class="seg"><button data-act="lang" data-v="th" class="${(PREF.lang || 'th') === 'th' ? 'on' : ''}">ไทย</button><button data-act="lang" data-v="en" class="${PREF.lang === 'en' ? 'on' : ''}">English</button></div></div>
-  <p class="muted center" style="margin-top:16px">เวอร์ชัน ${APPVER}${MOCK ? ' · โหมดทดสอบ' : ''} · <a href="offline/" style="color:#1b5e20">แอปออฟไลน์ตัวเดิม</a></p>`;
+  <p class="muted center" style="margin-top:16px">เวอร์ชัน ${APPVER}${MOCK ? ' · โหมดทดสอบ' : ''}</p>`;
 }
 function rCreate() {
   const cs = Object.values(UI.courses || {});
