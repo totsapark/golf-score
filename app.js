@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.6.1';
+const APPVER = '2.7.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -24,7 +24,7 @@ function forgetGame(code) {
   const a = jget(DEV, 'golf2_active', null); if (a && a.code === code) jset(DEV, 'golf2_active', null);
 }
 const addMyGame = g => { const a = myGames().filter(x => x.code !== g.code); a.unshift(g); jset(DEV, 'golf2_games', a.slice(0, 15)); };
-const PREF = jget(localStorage, 'golf2_prefs', { unit: 'y', sun: false, wake: true, sat: true });
+const PREF = { unit: 'y', sun: false, wake: true, sat: true, shots: true, ...jget(localStorage, 'golf2_prefs', {}) };
 const setPref = (k, v) => { PREF[k] = v; jset(localStorage, 'golf2_prefs', PREF); };
 let HIST = jget(localStorage, 'golf2_hist', []);
 
@@ -464,10 +464,10 @@ function rHole() {
       <button class="l ${e.tee === 'l' ? 'on' : ''}" data-act="tee" data-v="l">⬅ ซ้าย</button><button class="${e.tee === 's' ? 'on' : ''}" data-act="tee" data-v="s">⬆ ตรง</button><button class="r ${e.tee === 'r' ? 'on' : ''}" data-act="tee" data-v="r">ขวา ➡</button></div></div>
     <div class="grid4 pen">${K.PEN.map(([k, ic, nm, pt]) => `<button class="${e[k] ? 'on' : ''} ${pt ? '' : 'sand'}" data-act="pen" data-v="${k}">${ic} ${nm}${e[k] ? `<b>×${e[k]}</b>` : ''}</button>`).join('')}</div>
     ${sc != null ? `<div class="formula">สกอร์ ${sc} = ออน ${e.on} + พัตต์ ${e.putt}${pn ? ` + โทษ ${pn}` : ''}${st ? ` · Net ${sc - st}` : ''}</div>` : ''}</div>
-  <div class="card"><div class="ptop"><h2 style="margin:0">🏌️ ช็อตหลุมนี้</h2><span class="muted">${pid === ME ? '' : 'ของ ' + esc(p.name)}</span></div>
+  ${!PREF.shots ? '' : `<div class="card"><div class="ptop"><h2 style="margin:0">🏌️ ช็อตหลุมนี้</h2><span class="muted">${pid === ME ? '' : 'ของ ' + esc(p.name)}</span></div>
     ${shotList(pid, i)}
     <button class="btn full big-btn" data-act="shot">📍 ตีแล้ว · บันทึกช็อต</button>
-    </div>
+    </div>`}
   <div class="card"><h2>👥 หลุมนี้ของแก๊ง ${MON && K.hasHC(G) ? `<span class="muted">(เงินคิดด้วย ${G.meta.moneyBy === 'net' ? 'Net' : 'Gross'})</span>` : ''}</h2>
     <table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${K.hasHC(G) ? '<th>Net</th>' : ''}${MON ? '<th>เสีย</th>' : ''}</tr>${rows}</table>
     ${!MON ? '' : mo.picks ? `<div class="note">🎲 สุ่มได้อันดับ ${mo.picks.join(', ')} → ${K.amounts(G).slice(0, mo.picks.length).join(' / ')} บาท</div>` : ''}</div>
@@ -505,7 +505,7 @@ function rMap() {
     saveShot: (i, s) => { gw(`shots/${ME}/${hk(i)}/s${s.t}`, s); sendLoc(true); },
     locs: () => LOCS,
     delShot: (i, k) => gw(`shots/${ME}/${hk(i)}/${k}`, null),
-    geo: () => geoCache, saveGeo, searchDownload, downloadAt: at => downloadIntoGame(at),
+    shotsOn: () => PREF.shots, geo: () => geoCache, saveGeo, searchDownload, downloadAt: at => downloadIntoGame(at),
     saveCourseGeo: g => { const cid = G.meta.cid || (G.meta.course ? slug(G.meta.course) : ''); if (!cid) return; if (!G.meta.cid) gw('meta/cid', cid); ST.set('coursegeo/' + cid, { ...g, t: Date.now() }).catch(() => {}); },
   });
 }
@@ -640,8 +640,7 @@ function rSum() {
   ${shortT ? `<div class="card"><h2>🎯 พัตต์ & ลูกสั้น</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>พัตต์<br>/หลุม</th><th>พัตต์<br>/GIR</th><th>1 พัตต์</th><th>3 พัตต์+</th><th>ชิปลง</th><th>Scram-<br>bling</th><th>Bounce<br>back</th></tr>${shortT}</table></div></div>` : ''}
   <div class="card"><h2>🚫 ลูกโทษ & บังเกอร์</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>🌳</th><th>💧</th><th>🚫 OB</th><th>แต้มโทษ</th><th>🏖️</th><th>Sand save</th></tr>${penT}</table></div></div>
   <div class="card"><h2>🏌️ Tee-off</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>⬅</th><th>⬆</th><th>➡</th><th>Fairway<br>Par 4-5</th><th>สกอร์เมื่อ<br>ตีตรง</th><th>เมื่อ<br>ไม่ตรง</th></tr>${teeT}</table></div></div>
-  <div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2>${cl.length ? `<table><tr><th class="l">ไม้</th><th>ใช้</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b>${c.cat !== c.c ? ` <span class="muted">${c.cat}</span>` : ''}</td><td>${c.n}</td><td><b>${c.avg != null ? Math.round(c.avg * u) : '-'}</b></td><td>${c.max != null ? Math.round(c.max * u) : '-'}</td></tr>`).join('')}</table>
-    ` : '<p class="muted">ยังไม่มี · กด "📍 ตีแล้ว · บันทึกช็อต" ตอนยืนที่ลูกทุกช็อต แล้วเลือกไม้ ระบบจะคำนวณระยะแต่ละไม้ให้</p>'}</div>
+  ${cl.length ? `<div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2><table><tr><th class="l">ไม้</th><th>ใช้</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b>${c.cat !== c.c ? ` <span class="muted">${c.cat}</span>` : ''}</td><td>${c.n}</td><td><b>${c.avg != null ? Math.round(c.avg * u) : '-'}</b></td><td>${c.max != null ? Math.round(c.max * u) : '-'}</td></tr>`).join('')}</table></div>` : ''}
   ${Object.keys(G.shots || {}).length ? '<div class="card"><h2>🗺️ แผนที่การตีย้อนหลัง</h2><div id="replay" class="replay"></div></div>' : ''}
   <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll">${scorecard()}</div></div>
   <div class="card"><h2>📤 แชร์ & บันทึก</h2>
@@ -701,6 +700,7 @@ function rGang() {
   <div class="card"><h2>📱 เครื่องนี้</h2>
     <label class="lb">หน่วยระยะ</label><div class="seg"><button data-act="unit" data-v="y" class="${PREF.unit === 'y' ? 'on' : ''}">หลา</button><button data-act="unit" data-v="m" class="${PREF.unit === 'm' ? 'on' : ''}">เมตร</button></div>
     <div class="trow"><span>โหมดกลางแดด</span><button class="sw ${PREF.sun ? 'on' : ''}" data-act="sun"></button></div>
+    <div class="trow"><span>บันทึกช็อต (ไม้ + ตำแหน่ง)</span><button class="sw ${PREF.shots ? 'on' : ''}" data-act="shotspref"></button></div>
     <div class="trow"><span>กันจอดับ</span><button class="sw ${PREF.wake ? 'on' : ''}" data-act="wake"></button></div>
     <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>
     <button class="btn red full" data-act="leave">ออกจากแก๊งในเครื่องนี้</button>
@@ -842,6 +842,7 @@ document.addEventListener('click', async e => {
     case 'moneytoggle': { const on = !K.moneyOn(G); if (!on && !(await ask('ปิดกินตัง? (ไม่สุ่มเงินหลุมต่อไป ยอดที่คิดไปแล้วจะไม่แสดง)'))) return; gw('meta/money', on); toast(on ? '💰 เปิดกินตังแล้ว' : 'ปิดกินตังแล้ว'); return; }
     case 'setmeta': gw(`meta/${t.dataset.k}`, t.dataset.k === 'holes' ? +v : v); return;
     case 'unit': setPref('unit', v); render(); return;
+    case 'shotspref': setPref('shots', !PREF.shots); toast(PREF.shots ? '📍 เปิดบันทึกช็อต' : 'ปิดบันทึกช็อตแล้ว'); render(); return;
     case 'leave': if (Object.keys(OUT).length && !(await ask(`ยังมีข้อมูลรอส่ง ${Object.keys(OUT).length} รายการ (รอเน็ต) ถ้าออกตอนนี้จะหาย ออกเลยไหม?`))) return;
       if (await ask('ออกจากแก๊งในเครื่องนี้? (คะแนนที่ส่งแล้วยังอยู่ เข้าใหม่ได้ด้วย PIN)')) { DEV.removeItem(okey()); DEV.removeItem(ckey()); setId(CODE, null); go(null); } return;
     case 'img': scoreImage(); return;
