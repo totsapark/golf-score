@@ -115,7 +115,7 @@ export function createMap(el, ctx) {
 
   function hg(i) { return geo?.holes?.[hk(i)] || {}; }
   // แท่นทีตามสี Tee ที่เลือกในแก๊ง (Black/Gold/Blue/White/Red) ถ้าไม่ระบุใช้ Blue
-  function teeOf(h) { const t = h.tees; if (!t) return h.tee; let want = (ctx.G().meta?.tee || '').trim().toLowerCase(); if (want === 'yellow') want = 'gold'; const k = Object.keys(t).find(x => x.toLowerCase() === want) || (t.Blue ? 'Blue' : Object.keys(t)[0]); return t[k] || h.tee; }
+  function teeOf(h) { const t = h.tees; if (!t) return h.tee; const want = (ctx.G().meta?.tee || '').trim().toLowerCase(), alias = { yellow: 'gold', gold: 'yellow' }; const ks = Object.keys(t); const k = ks.find(x => x.toLowerCase() === want) || ks.find(x => x.toLowerCase() === alias[want]) || (t.Blue ? 'Blue' : ks[0]); return t[k] || h.tee; }
   function greenPoly(i) {
     const g = hg(i).green; if (!g || !geo?.features) return null;
     const greens = geo.features.filter(f => f.k === 'green');

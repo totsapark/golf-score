@@ -5,7 +5,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.9.0';
+const APPVER = '2.10.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -264,21 +264,37 @@ function courseSearchDialog(initial) { return new Promise(res => {
   let results = [];
   const run = async () => { const q = d.querySelector('#cs_q').value.trim(); if (!q) return; const box = d.querySelector('#cs_res');
     box.innerHTML = '<p class="muted center">กำลังค้นหา...</p>';
-    try { results = await searchCourses(q); } catch (e) { box.innerHTML = '<p class="muted center">ค้นหาไม่ได้ ต้องมีอินเทอร์เน็ต</p>'; return; }
-    box.innerHTML = results.length ? results.map((r, k) => `<button class="btn sec full" style="text-align:left" data-k="${k}">${r.golf ? '⛳' : '📍'} <b>${esc(r.name)}</b><br><span class="muted">${esc(r.addr)}</span></button>`).join('')
+    const lib = await libSearch(q); let osm = [], fail = false;
+    try { osm = await searchCourses(q); } catch (e) { fail = true; }
+    osm = osm.filter(r => !lib.some(l => l.cid === r.cid)).map(r => ({ ...r, lib: !!UI.courses?.[r.cid] }));
+    results = [...lib, ...osm];
+    if (!results.length && fail) { box.innerHTML = '<p class="muted center">ค้นหาไม่ได้ ต้องมีอินเทอร์เน็ต</p>'; return; }
+    box.innerHTML = results.length ? results.map((r, k) => `<button class="btn sec full" style="text-align:left" data-k="${k}">${r.lib ? '⭐' : r.golf ? '⛳' : '📍'} <b>${esc(r.name)}</b><br><span class="muted">${esc(r.addr)}</span></button>`).join('')
       : '<p class="muted center">ไม่พบ ลองพิมพ์ชื่อภาษาอังกฤษหรือไทยแบบอื่น</p>'; };
   d.querySelector('#cs_go').onclick = run; d.querySelector('#cs_q').addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
   d.addEventListener('click', e => { const b = e.target.closest('[data-k],[data-x]'); if (!b) return; d.remove(); res(b.dataset.x ? null : results[+b.dataset.k]); });
   if (initial) run(); else setTimeout(() => d.querySelector('#cs_q').focus(), 50);
 }); }
+// คลังสนามของแอป (สนามที่มีข้อมูลครบ เช่น Mountain Shadow, Bonanza, Starry Valley)
+async function libSearch(q) {
+  if (!UI.courses || !Object.keys(UI.courses).length) UI.courses = (await withTimeout(ST.get('courses'), 6000).catch(() => null)) || {};
+  const n = s => String(s || '').toLowerCase().replace(/[\s&'’.-]+/g, '');
+  const k = n(q); if (!k) return [];
+  return Object.entries(UI.courses).filter(([, c]) => [c.name, ...(c.aliases || [])].some(x => n(x).includes(k) || (k.length >= 4 && k.includes(n(x)))))
+    .map(([cid, c]) => ({ cid, name: c.name, addr: `ข้อมูลครบ ${c.holes || 18} หลุม`, lat: c.center?.[0], lng: c.center?.[1], radius: 1600, golf: true, lib: true }));
+}
 async function fetchCourse(at) {
   const w = dlg(`<p><b>⬇️ กำลังดาวน์โหลดแผนที่สนาม...</b></p><div class="dice">⛳</div><p class="muted">${esc(at.name || '')}</p>`);
   try {
-    const d = await importOSM(at.lat, at.lng, at.radius || 2000); if (at.name && !d.name) d.name = at.name;
+    let d;
+    const osmOk = at.lat != null && !(at.lib && at.cid && !String(at.cid).startsWith('osm-'));
+    try { d = osmOk ? await importOSM(at.lat, at.lng, at.radius || 2000) : null; } catch (e) { if (!at.lib) throw e; }
+    if (!d) d = { name: at.name, holes: {}, features: [], center: at.lat != null ? [at.lat, at.lng] : null };
+    if (at.name && (!d.name || at.lib)) d.name = at.name;
     d.cid = at.cid || (d.name ? slug(d.name) : '');
     if (d.cid) { // ข้อมูลที่เคยบันทึกไว้ (Par/HCP, ตำแหน่งหลุมที่ปักเอง) จากคลังสนามกลาง
       const [lib, lg] = await Promise.all([withTimeout(ST.get('courses/' + d.cid), 8000).catch(() => null), withTimeout(ST.get('coursegeo/' + d.cid), 8000).catch(() => null)]);
-      d.lib = lib;
+      d.lib = lib; if (!d.center && lib?.center) d.center = lib.center;
       if (lg?.holes) Object.entries(lg.holes).forEach(([h, x]) => { if (!d.holes[h] && x.green) d.holes[h] = x; });
       if (!d.features.length && lg?.features) d.features = lg.features;
       if (!d.outline && lg?.outline) d.outline = lg.outline;

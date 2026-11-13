@@ -110,7 +110,7 @@ const EN = {
   // ---- ประวัติ ----
   'ลบรอบนี้ออกจากประวัติ': 'Delete this round from history', '🗺️ ดูการตี': '🗺️ View shots', '‹ กลับไปประวัติ': '‹ Back to history', '🗑 ลบประวัติทั้งหมด': '🗑 Delete all history',
   'ลบประวัติทั้งหมด? (Handicap Index จะเริ่มนับใหม่)': 'Delete all history? (Handicap Index restarts)', 'รอบ': 'Rounds', 'รอบกอล์ฟ': 'Golf round', 'ยังไม่มีประวัติ จบรอบแล้วกด': 'No history yet · after a round tap',
-  'ในหน้าสรุป': 'on the Summary tab',
+  'ในหน้าสรุป': 'on the Summary tab', 'ข้อมูลครบ': 'Full data ·',
   'เช่น ปัญญาอินทรา, Alpine': 'e.g. Panya Indra, Alpine', 'ของ': 'of',
 };
 const MON_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
