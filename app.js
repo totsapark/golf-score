@@ -5,7 +5,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.11.0';
+const APPVER = '2.12.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -91,8 +91,9 @@ function refresh() {
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 // กลับมาที่แอป (เปิดจอ/สลับแอปกลับมา/เน็ตกลับมา): ต่อเน็ตใหม่ ส่งของค้าง เปิด GPS ใหม่
 function onResume() {
+  if (document.visibilityState === 'hidden') { stopGps(); return; } // พับจอ/สลับแอป → ปิด GPS ประหยัดแบต
   if (document.visibilityState !== 'visible') return;
-  keepAwake(); if (!ST) return;
+  lastTouch = Date.now(); keepAwake(); if (!ST) return;
   ST.reconnect(); flushOutbox();
   if (UI.view === 'game' && G) { stopGps(); startGps(); sendLoc(true); autoDraw(); refresh(); }
 }
@@ -234,25 +235,33 @@ function showDraw(i) {
 }
 
 /* ---------- GPS ---------- */
-function startGps() {
-  if (gpsWatch != null || !navigator.geolocation) return;
-  gpsWatch = navigator.geolocation.watchPosition(p => {
-    gps = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() };
-    if (mapObj) mapObj.gps();
-    if (UI.tab === 'hole') { const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); }
-    sendLoc();
-  }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+// ปกติ: ติดตาม GPS ต่อเนื่อง · โหมดประหยัดแบต: ขอตำแหน่งทุก 20 วิ (ยกเว้นหน้าแผนที่ที่ต้องวัดระยะสด)
+let gpsPoll = null;
+function onFix(p) {
+  gps = { lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() };
+  if (mapObj) mapObj.gps();
+  if (UI.tab === 'hole') { const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); }
+  sendLoc();
 }
-// ส่งตำแหน่งตัวเองให้เพื่อนเห็น: ทุก ~5 วิเมื่อขยับเกิน 5 ม. และอย่างน้อยทุก 30 วิ
+function startGps() {
+  if (gpsWatch != null || gpsPoll != null || !navigator.geolocation || document.visibilityState === 'hidden') return;
+  const opt = { enableHighAccuracy: true, maximumAge: PREF.eco ? 15000 : 5000, timeout: 20000 };
+  if (PREF.eco && UI.tab !== 'map') {
+    const once = () => navigator.geolocation.getCurrentPosition(onFix, () => {}, opt);
+    once(); gpsPoll = setInterval(once, 20000);
+  } else gpsWatch = navigator.geolocation.watchPosition(onFix, () => {}, opt);
+}
+// ส่งตำแหน่งตัวเองให้เพื่อนเห็น: ทุก ~5 วิเมื่อขยับเกิน 5 ม. และอย่างน้อยทุก 30 วิ (ประหยัดแบต: 20 วิ / 10 ม. / 90 วิ)
 function sendLoc(force) {
   if (!CODE || !ME || !gps || UI.view !== 'game') return;
   const now = Date.now(), moved = lastPos ? K.dist([lastPos.lat, lastPos.lng], [gps.lat, gps.lng]) : 1e9;
-  if (!force && (now - lastPosSent < 5000 || (moved < 5 && now - lastPosSent < 30000))) return;
+  const [gap, mv, beat] = PREF.eco ? [20000, 10, 90000] : [5000, 5, 30000];
+  if (!force && (now - lastPosSent < gap || (moved < mv && now - lastPosSent < beat))) return;
   lastPosSent = now; lastPos = { ...gps };
   ST.set(`locs/${CODE}/${ME}`, { lat: +gps.lat.toFixed(6), lng: +gps.lng.toFixed(6), acc: Math.round(gps.acc || 0), gt: now });
 }
 setInterval(() => sendLoc(), 10000);
-function stopGps() { if (gpsWatch != null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; } }
+function stopGps() { if (gpsWatch != null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; } if (gpsPoll != null) { clearInterval(gpsPoll); gpsPoll = null; } }
 let geoCache = null, geoUnsub = null; // แผนที่สนามของแก๊ง (เก็บในเครื่องด้วย ใช้ได้ตอนไม่มีเน็ต)
 window.__wiz = () => { UI.tab = 'map'; jset(DEV, 'golf2_tab', 'map'); render(); setTimeout(() => mapObj && mapObj.wizard(), 300); };
 function geoChanged() { const el = document.getElementById('gpsd'); if (el) el.innerHTML = gpsLine(); if (mapObj) mapObj.setGeo(geoCache); updateLiveMap(); if (UI.view === 'game' && UI.tab === 'gang') refresh(); }
@@ -344,8 +353,14 @@ function gpsLine() {
 /* ---------- prefs / header ---------- */
 function applyPrefs() { document.body.classList.toggle('sun', !!PREF.sun); keepAwake(); }
 let wl = null;
+// กันจอดับ: ปล่อยเองเมื่อไม่ได้แตะจอนาน (เช่น ใส่กระเป๋าเดินไปหลุมต่อไป) แตะจอเมื่อไหร่ก็กันจอดับต่อ
+let lastTouch = Date.now();
+const idleMs = () => PREF.eco ? 60000 : 180000;
+async function releaseWake() { if (wl) { const w = wl; wl = null; try { await w.release(); } catch (e) {} } }
+document.addEventListener('pointerdown', () => { lastTouch = Date.now(); if (!wl) keepAwake(); }, { capture: true, passive: true });
+setInterval(() => { if (wl && Date.now() - lastTouch > idleMs()) releaseWake(); }, 15000);
 async function keepAwake() {
-  if (!PREF.wake) { if (wl) { try { await wl.release(); } catch (e) {} wl = null; } return; }
+  if (!PREF.wake || Date.now() - lastTouch > idleMs()) return releaseWake();
   if (wl || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
   try { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } catch (e) {}
 }
@@ -767,6 +782,7 @@ function rGang() {
     <label class="lb" data-notr>🌐 ภาษา / Language</label><div data-notr><div class="seg"><button data-act="lang" data-v="th" class="${(PREF.lang || 'th') === 'th' ? 'on' : ''}">ไทย</button><button data-act="lang" data-v="en" class="${PREF.lang === 'en' ? 'on' : ''}">English</button></div></div>
     <div class="trow"><span>บันทึกช็อต (ไม้ + ตำแหน่ง)</span><button class="sw ${PREF.shots ? 'on' : ''}" data-act="shotspref"></button></div>
     <div class="trow"><span>กันจอดับ</span><button class="sw ${PREF.wake ? 'on' : ''}" data-act="wake"></button></div>
+    <div class="trow"><span>🔋 ประหยัดแบต</span><button class="sw ${PREF.eco ? 'on' : ''}" data-act="eco"></button></div>
     <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>
     <button class="btn red full" data-act="leave">ออกจากแก๊งในเครื่องนี้</button>
     ${host ? '<button class="btn red full" data-act="delgang">🗑 ลบแก๊งนี้ทิ้ง (ข้อมูลทุกคน)</button>' : ''}</div>
@@ -846,7 +862,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('.dlg') || e.target.closest('#mapwrap')) return;
   const t = e.target.closest('[data-act],[data-tab]'); if (!t || t.disabled) return;
   setTimeout(keepAwake, 0);
-  if (t.dataset.tab) { UI.tab = t.dataset.tab; jset(DEV, 'golf2_tab', UI.tab); render(); scrollTo(0, 0); return; }
+  if (t.dataset.tab) { UI.tab = t.dataset.tab; jset(DEV, 'golf2_tab', UI.tab); render(); scrollTo(0, 0); if (PREF.eco && G) { stopGps(); startGps(); } return; }
   const a = t.dataset.act, v = t.dataset.v;
   const pid = UI.editPid || ME, i = UI.cur;
   switch (a) {
@@ -909,6 +925,7 @@ document.addEventListener('click', async e => {
     case 'moneytoggle': { const on = !K.moneyOn(G); if (!on && !(await ask('ปิดกินตัง? (ไม่สุ่มเงินหลุมต่อไป ยอดที่คิดไปแล้วจะไม่แสดง)'))) return; gw('meta/money', on); toast(on ? '💰 เปิดกินตังแล้ว' : 'ปิดกินตังแล้ว'); return; }
     case 'setmeta': gw(`meta/${t.dataset.k}`, t.dataset.k === 'holes' ? +v : v); return;
     case 'unit': setPref('unit', v); render(); return;
+    case 'eco': setPref('eco', !PREF.eco); toast(PREF.eco ? '🔋 ประหยัดแบต: เปิด (GPS ทุก 20 วิ · จอดับเองถ้าไม่แตะ 1 นาที)' : 'ประหยัดแบต: ปิด'); if (G) { stopGps(); startGps(); } keepAwake(); render(); return;
     case 'shotspref': setPref('shots', !PREF.shots); toast(PREF.shots ? '📍 เปิดบันทึกช็อต' : 'ปิดบันทึกช็อตแล้ว'); render(); return;
     case 'leave': if (Object.keys(OUT).length && !(await ask(`ยังมีข้อมูลรอส่ง ${Object.keys(OUT).length} รายการ (รอเน็ต) ถ้าออกตอนนี้จะหาย ออกเลยไหม?`))) return;
       if (await ask('ออกจากแก๊งในเครื่องนี้? (คะแนนที่ส่งแล้วยังอยู่ เข้าใหม่ได้ด้วย PIN)')) { DEV.removeItem(okey()); DEV.removeItem(ckey()); setId(CODE, null); go(null); } return;

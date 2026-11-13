@@ -100,7 +100,7 @@ const EN = {
   '📲 ชวนเพื่อนเข้าแก๊ง': '📲 Invite friends', '🔗 แชร์ลิงก์เข้าแก๊ง': '🔗 Share join link', 'ลิงก์เข้าแก๊ง': 'Join link', 'คัดลอกลิงก์แล้ว': 'Link copied', 'เข้าแก๊งกอล์ฟ': 'Join golf gang', '(รหัส': '(code',
   '👥 ผู้เล่น': '👥 Players', '(ฉัน)': '(me)', 'มีเครื่องจดแล้ว': 'has a phone', 'ยังไม่มีเครื่อง': 'no phone yet', 'เพิ่มชื่อเพื่อนล่วงหน้า': "Add a friend's name", 'ครบ 10 คนแล้ว': 'Already 10 players',
   'ออกจากแก๊ง? (คะแนนของคนนี้จะหายด้วย)': "Remove from gang? (their scores are deleted too)", '⚙️ ตั้งค่ารอบ': '⚙️ Round settings', 'Tee (สีแท่นที)': 'Tee', 'หน่วยระยะ': 'Distance unit',
-  '📱 เครื่องนี้': '📱 This phone', 'โหมดกลางแดด': 'Sunlight mode', 'กันจอดับ': 'Keep screen on', 'บันทึกช็อต (ไม้ + ตำแหน่ง)': 'Record shots (club + position)', 'ภาษา': 'Language',
+  '📱 เครื่องนี้': '📱 This phone', 'โหมดกลางแดด': 'Sunlight mode', 'กันจอดับ': 'Keep screen on', '🔋 ประหยัดแบต': '🔋 Battery saver', '🔋 ประหยัดแบต: เปิด (GPS ทุก 20 วิ · จอดับเองถ้าไม่แตะ 1 นาที)': '🔋 Battery saver: on (GPS every 20 s · screen sleeps after 1 min untouched)', 'ประหยัดแบต: ปิด': 'Battery saver: off', 'แก้ได้เฉพาะข้อมูลของตัวเอง': 'You can only edit your own data', 'บันทึกช็อต (ไม้ + ตำแหน่ง)': 'Record shots (club + position)', 'ภาษา': 'Language',
   'ออกจากแก๊งในเครื่องนี้': 'Leave gang on this phone', 'ออกจากแก๊งในเครื่องนี้? (คะแนนที่ส่งแล้วยังอยู่ เข้าใหม่ได้ด้วย PIN)': 'Leave on this phone? (sent scores stay; rejoin with the PIN)',
   'รายการ (รอเน็ต) ถ้าออกตอนนี้จะหาย ออกเลยไหม': 'items (waiting for internet) will be lost · leave anyway',
   '🗑 ลบแก๊งนี้ทิ้ง (ข้อมูลทุกคน)': "🗑 Delete this gang (everyone's data)", 'ลบแก๊งนี้ทิ้ง? คะแนน แผนที่ และข้อมูลของทุกคนในแก๊งจะหายถาวร': "Delete this gang? Everyone's scores, map and data are gone for good",
