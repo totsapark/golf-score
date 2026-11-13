@@ -1,11 +1,12 @@
 import { FIREBASE_CONFIG } from './config.js';
 import { makeStore } from './store.js';
 import * as K from './golf.js';
+import * as A from './analysis.js';
 import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.13.0';
+const APPVER = '2.14.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -682,6 +683,92 @@ function mountReplay(data) {
   UI.rp = UI.rp || { pid: ME, hole: 0 };
   replayObj = createReplay(el, { ...data, unit: PREF.unit }, UI.rp);
 }
+/* ---------- วิเคราะห์ฟอร์มหลังจบรอบ ---------- */
+const sg1 = v => (v > 0 ? '+' : '') + (Math.round(v * 10) / 10);
+const lvlTxt = l => l <= 0 ? '0' : l >= 36 ? '36+' : String(l);
+function pickPid(cands) { const ids = cands.map(x => x.p.id); return ids.includes(UI.anaP) ? UI.anaP : ids.includes(ME) ? ME : ids[0]; }
+function whoChips(cands, pid) {
+  return cands.length > 1 ? `<div class="chips" style="padding:0 0 8px">${cands.map(x => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${x.p.id === pid ? 'cur' : ''}" data-act="anap" data-v="${x.p.id}">${esc(x.p.name)}</button>`).join('')}</div>` : '';
+}
+function coachCard(list) {
+  const cands = list.filter(x => x.s.n >= 9); if (!cands.length) return '';
+  const pid = pickPid(cands), c = A.coach(G, pid), b = c.b, tot = Math.abs(b.pen) + Math.abs(b.t2g) + Math.abs(b.putt) || 1;
+  const seg = (v, cls, lab) => v > 0 ? `<span class="${cls}" style="flex:${Math.abs(v) / tot}"><b>${sg1(v)}</b><small>${lab}</small></span>` : '';
+  const part = (lab, v) => `<div class="bkrow"><span>${lab}</span><b class="${v > 0 ? 'sc-o' : v < 0 ? 'sc-u' : ''}">${sg1(v)}</b></div>`;
+  const fwAvg = b.fw.n ? b.fw.t2g / b.fw.n : null, missAvg = b.miss.n ? b.miss.t2g / b.miss.n : null;
+  const rows = c.cats.map(x => `<tr><td class="l">${x.label}</td><td><b>${x.fmt(x.v)}</b></td><td><span class="lvl ${x === c.weak ? 'bad' : x === c.strong ? 'good' : ''}">${lvlTxt(x.lvl)}</span></td></tr>`).join('');
+  const notes = [];
+  if (c.strong) notes.push(`<div class="cn"><span>💪</span><div><span>จุดแข็ง</span>: <b>${c.strong.label}</b> <span class="muted">(</span><span class="muted">ระดับ HCP</span> <span class="muted">${lvlTxt(c.strong.lvl)})</span></div></div>`);
+  if (c.weak) notes.push(`<div class="cn"><span>🎯</span><div><span>ควรฝึก</span>: <b>${c.weak.label}</b> <span class="muted">(</span><span class="muted">ระดับ HCP</span> <span class="muted">${lvlTxt(c.weak.lvl)})</span>${c.weak.gain >= 0.5 ? `<br><span>ถ้าทำได้เท่าระดับด้านอื่น จะลดได้ประมาณ</span> <b>${c.weak.gain.toFixed(1)}</b> <span>สโตรก/รอบ</span>` : ''}</div></div>`);
+  if (fwAvg != null && missAvg != null && b.miss.n >= 2 && missAvg - fwAvg >= 0.3) notes.push(`<div class="cn"><span>🏌️</span><div><span>ทีช็อตไม่ลงแฟร์เวย์ เสียเพิ่มเฉลี่ย</span> <b>${(missAvg - fwAvg).toFixed(1)}</b> <span>สโตรก/หลุม</span></div></div>`);
+  if (b.pen >= 2) notes.push(`<div class="cn"><span>🚫</span><div><span>ลูกโทษทำให้เสีย</span> <b>${b.pen}</b> <span>สโตรก · เล่นเซฟขึ้นในหลุมที่มีน้ำ/OB</span></div></div>`);
+  return `<div class="card"><h2>🧠 วิเคราะห์ฟอร์ม</h2>${whoChips(cands, pid)}
+    <div class="muted" style="font-size:12px">เสียสโตรกตรงไหน (เทียบ Par)</div>
+    <div class="bkbar">${seg(b.pen, 'bp', 'ลูกโทษ')}${seg(b.t2g, 'bt', 'ก่อนถึงกรีน')}${seg(b.putt, 'bu', 'พัตต์')}</div>
+    ${part('🚫 ลูกโทษ', b.pen)}${part('🏌️ ก่อนถึงกรีน (ทีช็อต + ลูกเข้ากรีน + ลูกสั้น)', b.t2g)}${part('⛳ พัตต์ (เทียบ 2 พัตต์/หลุม)', b.putt)}
+    <div class="bkrow tot"><span>รวม</span><b>${sg1(b.over)}</b></div>
+    ${notes.join('')}
+    <table style="margin-top:8px"><tr><th class="l">ด้าน</th><th>รอบนี้</th><th>ระดับ HCP ≈</th></tr>${rows}</table>
+    <p class="muted" style="font-size:11px;margin:6px 0 0">ระดับ HCP เทียบจากค่าเฉลี่ยโดยประมาณของนักกอล์ฟสมัครเล่น</p></div>`;
+}
+function raceCard() {
+  const R = A.race(G).filter(r => r.last > 0), N = K.nHoles(G); if (!R.length || Math.max(...R.map(r => r.last)) < 3) return '';
+  const vals = R.flatMap(r => r.pts.filter(v => v != null)), lo = Math.min(-2, ...vals), hi = Math.max(2, ...vals);
+  const W = 340, H = 180, l = 30, r = 10, t = 10, bt = 22, x = i => l + i * (W - l - r) / N, y = v => t + (hi - v) * (H - t - bt) / (hi - lo);
+  const grid = [lo, 0, hi].filter((v, k) => k === 1 || Math.abs(y(v) - y(0)) > 14).map(v => `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? '#90a4ae' : '#e0e6e0'}" stroke-dasharray="${v === 0 ? '' : '3 3'}"/><text x="${l - 4}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="#667">${K.fd(v)}</text>`).join('');
+  const hx = Array.from({ length: N }, (_, i) => (i + 1) % 3 === 0 || i === 0 ? `<text x="${x(i + 1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#889">${i + 1}</text>` : '').join('');
+  const lines = R.map(rr => { let d = '', pen = false; rr.pts.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+    const lv = rr.pts[rr.last]; return `<path d="${d}" fill="none" stroke="${rr.color || '#2e7d32'}" stroke-width="${rr.id === ME ? 3 : 2}" stroke-linejoin="round"/><circle cx="${x(rr.last)}" cy="${y(lv)}" r="3.5" fill="${rr.color || '#2e7d32'}"/>`; }).join('');
+  const lg = R.map(rr => `<span class="lg"><i style="background:${rr.color || '#2e7d32'}"></i>${esc(rr.name)} ${K.fd(rr.pts[rr.last])}</span>`).join('');
+  return `<div class="card"><h2>📈 สกอร์สะสมรายหลุม</h2><svg viewBox="0 0 ${W} ${H}" class="chart">${grid}${hx}${lines}</svg><div class="legend" style="margin:4px 0 0">${lg}</div></div>`;
+}
+function diffCard() {
+  const D = A.holeDifficulty(G); if (D.length < 6) return '';
+  const col = v => v >= 1 ? '#ef9a9a' : v >= .5 ? '#ffcdd2' : v <= -0.01 ? '#a5d6a7' : v <= .2 ? '#e8f5e9' : '#eceff1';
+  const cells = D.map(h => `<div class="hd" style="background:${col(h.avg)}"><small>H${h.i + 1}</small><b>${K.fd(Math.round(h.avg * 10) / 10)}</b></div>`).join('');
+  const srt = [...D].sort((a, b) => b.avg - a.avg), f = h => `H${h.i + 1} <span class="muted">(Par ${h.par}, ${K.fd(Math.round(h.avg * 10) / 10)})</span>`;
+  return `<div class="card"><h2>🔥 หลุมยาก / ง่าย</h2><div class="muted" style="font-size:12px;margin-bottom:6px">ค่าเฉลี่ยทั้งแก๊ง เทียบ Par</div><div class="hdgrid">${cells}</div>
+    <div class="bkrow"><span>😰 ยากสุด</span><span>${srt.slice(0, 3).map(f).join(' · ')}</span></div><div class="bkrow"><span>😎 ง่ายสุด</span><span>${srt.slice(-3).reverse().map(f).join(' · ')}</span></div></div>`;
+}
+function shotCard(list) {
+  const cands = list.filter(x => Object.keys(G.shots?.[x.p.id] || {}).length); if (!cands.length) return '';
+  const pid = pickPid(cands), { drives, approach } = A.shotAnalysis(G, pid, geoCache?.holes);
+  if (!drives.length && !approach.length) return '';
+  const yd = PREF.unit === 'y', u = m => Math.round(yd ? m * 1.09361 : m), un = yd ? 'หลา' : 'ม.';
+  let out = `<div class="card"><h2>🎯 ไดรฟ์ & ลูกเข้ากรีน (จาก GPS)</h2>${whoChips(cands, pid)}`;
+  if (drives.length) {
+    const ds = drives.map(d => d.d), avg = ds.reduce((a, b) => a + b, 0) / ds.length, wl = drives.filter(d => d.lat != null);
+    const L = wl.filter(d => d.lat < -15).length, C = wl.filter(d => Math.abs(d.lat) <= 15).length, Rr = wl.filter(d => d.lat > 15).length;
+    const k = yd ? 1.09361 : 1, step = 50 / k, minD = Math.max(0, Math.floor((Math.min(...ds) - 30) / step) * step), maxD = Math.max(minD + 3 * step, Math.max(...ds) + 15);
+    const W = 300, H = 200, X = v => W / 2 + Math.max(-50, Math.min(50, v)) * (W / 2 - 10) / 50, Y = v => H - 14 - (v - minD) * (H - 24) / (maxD - minD);
+    const rings = Array.from({ length: 12 }, (_, j) => minD + (j + 1) * step).filter(v => v < maxD).map(v => `<line x1="10" x2="${W - 10}" y1="${Y(v)}" y2="${Y(v)}" stroke="#e0e6e0" stroke-dasharray="3 3"/><text x="${W - 12}" y="${Y(v) - 3}" text-anchor="end" font-size="9" fill="#889">${u(v)}</text>`).join('');
+    const dots = wl.map(d => `<circle cx="${X(d.lat)}" cy="${Y(d.d)}" r="5" fill="#1565c0" fill-opacity=".75" stroke="#fff" data-act="tip" data-v="H${d.i + 1} · ${d.club} · ${u(d.d)} ${un}"/>`).join('');
+    out += `<svg viewBox="0 0 ${W} ${H}" class="chart"><rect x="${X(-15)}" y="6" width="${X(15) - X(-15)}" height="${H - 20}" fill="#c8e6c9" opacity=".6"/><line x1="${W / 2}" x2="${W / 2}" y1="6" y2="${H - 14}" stroke="#81c784"/>${rings}${dots}
+      <text x="12" y="${H - 2}" font-size="10" fill="#667">⬅ ซ้าย</text><text x="${W - 12}" y="${H - 2}" font-size="10" fill="#667" text-anchor="end">ขวา ➡</text></svg>
+      <div class="bkrow"><span>ไดรฟ์เฉลี่ย</span><b>${u(avg)} <span>${un}</span></b></div><div class="bkrow"><span>ไกลสุด</span><b>${u(Math.max(...ds))} <span>${un}</span></b></div>
+      ${wl.length ? `<div class="bkrow"><span>ซ้าย / ตรง / ขวา</span><b>${L} / ${C} / ${Rr}</b></div>` : ''}`;
+  }
+  if (approach.length) {
+    const B = yd ? [[0, 100], [100, 150], [150, 200], [200, 999]] : [[0, 90], [90, 140], [140, 180], [180, 999]];
+    const rows = B.map(([a, b]) => { const xs = approach.filter(x => u(x.d) >= a && u(x.d) < b); return xs.length ? `<tr><td class="l">${b === 999 ? a + '+' : a + '–' + b} <span>${un}</span></td><td>${xs.length}</td><td><b>${K.pc(xs.filter(x => x.gir).length, xs.length)}</b></td></tr>` : ''; }).join('');
+    out += `<table style="margin-top:8px"><tr><th class="l">ระยะเข้ากรีน</th><th>ครั้ง</th><th>GIR</th></tr>${rows}</table>`;
+  }
+  return out + '</div>';
+}
+function trendCard() {
+  const cnt = {}; HIST.forEach(r => r.players.forEach(p => { if (p.n) cnt[p.name] = (cnt[p.name] || 0) + 1; }));
+  const names = Object.keys(cnt).filter(n => cnt[n] >= 2).sort((a, b) => cnt[b] - cnt[a]); if (!names.length) return '';
+  const name = names.includes(UI.trendP) ? UI.trendP : names[0], T = A.trend(HIST, name);
+  const spark = (lab, key, fmt, lowerBetter, dfmt = fmt) => {
+    const v = T.map(x => x[key]), lo = Math.min(...v), hi = Math.max(...v), rg = hi - lo || 1, W = 320, H = 64, X = i => 14 + i * (W - 28) / Math.max(1, v.length - 1), Y = q => 10 + (hi - q) * (H - 22) / rg;
+    const d = v.map((q, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(q).toFixed(1)}`).join(''), ch = v[v.length - 1] - v[0], good = lowerBetter ? ch < 0 : ch > 0;
+    return `<div class="bkrow"><span>${lab}</span><span><b>${fmt(v[v.length - 1])}</b> <span class="${Math.abs(ch) < 1e-9 ? 'muted' : good ? 'tg' : 'tb'}">${ch > 0 ? '▲' : ch < 0 ? '▼' : '='} ${dfmt(Math.abs(ch))}</span></span></div>
+      <svg viewBox="0 0 ${W} ${H}" class="chart"><path d="${d}" fill="none" stroke="#2e7d32" stroke-width="2.5"/>${v.map((q, i) => `<circle cx="${X(i)}" cy="${Y(q)}" r="3.5" fill="#2e7d32" data-act="tip" data-v="${esc(T[i].course || '')} ${T[i].date} · ${fmt(q)}"/>`).join('')}</svg>`;
+  };
+  const chips = names.length > 1 ? `<div class="chips" style="padding:0 0 8px">${names.map(n => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${n === name ? 'cur' : ''}" data-act="trendp" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
+  return `<div class="card"><h2>📆 แนวโน้มหลายรอบ</h2>${chips}<div class="muted" style="font-size:12px">${T.length} <span>รอบ</span> · <span>เทียบรอบแรกกับรอบล่าสุด</span></div>
+    ${spark('สกอร์เทียบ Par (ต่อ 18 หลุม)', 'toPar', v => K.fd(Math.round(v * 10) / 10), true, v => String(Math.round(v * 10) / 10))}${spark('พัตต์/หลุม', 'putts', v => v.toFixed(2), true)}${spark('GIR', 'gir', v => Math.round(v) + '%', false)}</div>`;
+}
 function rSum() {
   const hc = K.hasHC(G), list = board().map(x => ({ ...x, m: K.more(G, x.p.id) })), played = list.filter(x => x.s.n), N = K.nHoles(G), two = N == 18;
   let pot = 0; list.forEach(x => pot += x.s.money);
@@ -708,6 +795,7 @@ function rSum() {
     ${hc ? `<div class="seg" style="margin-bottom:8px"><button data-act="sortBy" data-v="gross" class="${UI.sortBy !== 'net' ? 'on' : ''}">เรียง Gross</button><button data-act="sortBy" data-v="net" class="${UI.sortBy === 'net' ? 'on' : ''}">เรียง Net</button></div>` : ''}
     <div class="scroll"><table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${hc ? '<th>Net</th>' : ''}<th>พัตต์</th><th>GIR</th><th>HCP</th><th>Course<br>HCP</th></tr>${top}</table></div>
     </div>
+  ${coachCard(list)}${raceCard()}
   ${aw ? `<div class="card"><h2>🏅 รางวัลประจำรอบ</h2>${aw}</div>` : ''}
   ${!K.moneyOn(G) ? (bill ? `<div class="card"><h2>🍛 ค่ากับข้าว</h2><div class="note">ค่ากับข้าว ${bill} บาท หาร ${n} คน → คนละ <b>${Math.ceil(bill / n)} บาท</b></div></div>` : '') : `<div class="card"><h2>💰 เงิน & ค่ากับข้าว</h2><div class="big">กองกลาง ${pot} บาท</div>
     ${bill ? `<div class="note">ค่ากับข้าว ${bill} บาท → ${extra ? `กองกลางไม่พอ ทุกคนจ่ายเพิ่มคนละ <b>${extra} บาท</b>` : left ? `กองกลางเหลือ <b>${left} บาท</b>` : 'พอดี 👍'}</div>` : ''}
@@ -718,6 +806,7 @@ function rSum() {
   <div class="card"><h2>🚫 ลูกโทษ & บังเกอร์</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>🌳</th><th>💧</th><th>🚫 OB</th><th>แต้มโทษ</th><th>🏖️</th><th>Sand save</th></tr>${penT}</table></div></div>
   <div class="card"><h2>🏌️ Tee-off</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>⬅</th><th>⬆</th><th>➡</th><th>Fairway<br>Par 4-5</th><th>สกอร์เมื่อ<br>ตีตรง</th><th>เมื่อ<br>ไม่ตรง</th></tr>${teeT}</table></div></div>
   ${cl.length ? `<div class="card"><h2>🏌️‍♂️ ระยะไม้ของฉัน (จากช็อตที่บันทึก)</h2><table><tr><th class="l">ไม้</th><th>ใช้</th><th>เฉลี่ย (${un})</th><th>ไกลสุด</th></tr>${cl.map(c => `<tr><td class="l"><b>${c.c}</b>${c.cat !== c.c ? ` <span class="muted">${c.cat}</span>` : ''}</td><td>${c.n}</td><td><b>${c.avg != null ? Math.round(c.avg * u) : '-'}</b></td><td>${c.max != null ? Math.round(c.max * u) : '-'}</td></tr>`).join('')}</table></div>` : ''}
+  ${shotCard(list)}${diffCard()}
   ${Object.keys(G.shots || {}).length ? '<div class="card"><h2>🗺️ แผนที่การตีย้อนหลัง</h2><div id="replay" class="replay"></div></div>' : ''}
   <div class="card"><h2>📋 สกอร์การ์ด</h2><div class="scroll">${scorecard()}</div></div>
   <div class="card"><h2>📤 แชร์ & บันทึก</h2>
@@ -813,6 +902,7 @@ function rHist() {
   HIST.forEach(r => r.players.forEach(p => { if (!p.n) return; (m[p.name] = m[p.name] || { name: p.name, rounds: 0, diffs: [] }); m[p.name].rounds++; if (p.diff != null) m[p.name].diffs.push(p.diff); }));
   const ph = Object.values(m).map(x => ({ ...x, hi: K.hIndex(x.diffs), avg: x.diffs.length ? Math.round(x.diffs.reduce((a, b) => a + b, 0) / x.diffs.length * 10) / 10 : null })).sort((a, b) => (a.hi ?? a.avg ?? 99) - (b.hi ?? b.avg ?? 99));
   $app.innerHTML = `
+  ${trendCard()}
   <div class="card"><h2>🏌️ Handicap Index</h2>${ph.length ? `<table><tr><th class="l">ผู้เล่น</th><th>รอบ</th><th>HI</th></tr>${ph.map(x => `<tr><td class="l"><b>${esc(x.name)}</b></td><td>${x.rounds}</td><td class="hcp">${x.hi ?? (x.avg != null ? '~' + x.avg : '-')}</td></tr>`).join('')}</table>
     ` : '<p class="muted">ยังไม่มีประวัติ จบรอบแล้วกด "บันทึกรอบนี้ลงประวัติ" ในหน้าสรุป</p>'}</div>
   ${[...HIST].reverse().map(r => `<div class="card"><div class="ptop"><span><b>${esc(r.course || 'รอบกอล์ฟ')}</b><br><span class="muted">${thDate(r.date)} · ${r.holes} หลุม · Par ${r.par}</span></span><span style="display:flex;gap:6px">${r.rp && Object.keys(r.rp.shots || {}).length ? `<button class="btn sec" data-act="histrp" data-v="${r.rid}">🗺️ ดูการตี</button>` : ''}<button class="x" data-act="delround" data-v="${r.rid}">🗑</button></span></div>
@@ -904,6 +994,8 @@ document.addEventListener('click', async e => {
     case 'tee': { const e0 = { on: null, putt: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0.tee = e0.tee === v ? null : v; writeEntry(pid, i, e0); return; }
     case 'pen': { const e0 = { on: null, putt: null, tee: null, lost: 0, water: 0, ob: 0, bunker: 0, ...(K.ent(G, pid, i) || {}) }; e0[v] = ((e0[v] || 0) + 1) % 4; writeEntry(pid, i, e0); return; }
     case 'sortBy': UI.sortBy = v; render(); return;
+    case 'anap': UI.anaP = v; render(); return;
+    case 'trendp': UI.trendP = v; render(); return;
     case 'gsearch': searchDownload(); return;
     case 'gwiz': window.__wiz(); return;
     case 'ghere': if (!gps) { toast('ยังไม่ได้ตำแหน่ง GPS · อนุญาตตำแหน่งให้ Safari/Chrome แล้วลองใหม่'); startGps(); return; } downloadIntoGame({ lat: gps.lat, lng: gps.lng, radius: 2000 }); return;
