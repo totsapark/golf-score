@@ -98,13 +98,14 @@ export function createMap(el, ctx) {
     <div class="mtop"><div class="mbox mhole"><button data-m="prev">‹</button><div class="center" style="min-width:46px"><b id="mh" style="font-size:20px"></b><div class="muted" id="mp" style="font-size:11px"></div></div><button data-m="next">›</button></div>
       <div class="mbox mdist" id="md"></div></div>
     <div class="mside"><button data-m="loc" title="ตำแหน่งฉัน">🎯</button><button data-m="fit" title="ทั้งหลุม">⛳</button><button data-m="mode" title="ดาวเทียม/กราฟิก">🛰️</button><button data-m="menu" title="ข้อมูลสนาม">⚙️</button></div>
+    <div class="mhz" id="mhz" hidden></div>
     <div class="mwiz" id="mwiz" hidden></div>
     <div class="mbot" ${ctx.shotsOn && !ctx.shotsOn() ? 'hidden' : ''}><button class="btn" data-m="shot">📍 บันทึกช็อต</button><button class="btn sec" data-m="shots" id="mshots">ช็อต</button></div>`;
   const map = L.map(el.querySelector('#map'), { zoomControl: false, maxZoom: 21, attributionControl: true, tap: true });
   map.attributionControl.setPrefix(false);
   const sat = L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21, attribution: 'Imagery © Esri, Maxar · Course © OpenStreetMap' });
   const featL = L.layerGroup().addTo(map), holeL = L.layerGroup().addTo(map), shotL = L.layerGroup().addTo(map),
-    peopleL = L.layerGroup().addTo(map), meL = L.layerGroup().addTo(map), tgtL = L.layerGroup().addTo(map);
+    peopleL = L.layerGroup().addTo(map), meL = L.layerGroup().addTo(map), tgtL = L.layerGroup().addTo(map), hzL = L.layerGroup().addTo(map);
   // ไม่มีเน็ต → ใช้แผนที่กราฟิก (ภาพดาวเทียมโหลดไม่ได้)
   let geo = ctx.geo() || { holes: {}, features: [] }, satOn = navigator.onLine ? ctx.pref('sat', true) : false, setMode = null, target = null, lastHole = -1, wiz = null;
   if (satOn) sat.addTo(map);
@@ -140,8 +141,48 @@ export function createMap(el, ctx) {
     if (g && h.green && dist([g.lat, g.lng], h.green) < 1200) return { p: [g.lat, g.lng], me: true };
     const t = teeOf(h); return t ? { p: t, me: false } : g ? { p: [g.lat, g.lng], me: true } : null;
   }
+  // ระยะอุปสรรค (น้ำ/บังเกอร์) ตามแนวตีจากจุดที่ยืน → กรีน: ถึง = ขอบหน้า, ข้าม = ขอบหลัง
+  function hazards(i, f) {
+    const h = hg(i); if (!h.green || !f || !geo?.features?.length) return [];
+    const path = !f.me && h.line && h.line.length > 2 ? [f.p, ...h.line.slice(1)] : [f.p, h.green];
+    const la0 = f.p[0], kx = Math.cos(la0 * Math.PI / 180) * 111320, ky = 110540;
+    const xy = p => [(p[1] - f.p[1]) * kx, (p[0] - la0) * ky];
+    const P = path.map(xy), seg = []; let tot = 0;
+    for (let k = 1; k < P.length; k++) { const [ax, ay] = P[k - 1], [bx, by] = P[k], l = Math.hypot(bx - ax, by - ay) || 1e-6; seg.push({ ax, ay, dx: (bx - ax) / l, dy: (by - ay) / l, l, s0: tot }); tot += l; }
+    const proj = q => { let best = null; for (const g of seg) { const vx = q[0] - g.ax, vy = q[1] - g.ay, t = Math.max(0, Math.min(g.l, vx * g.dx + vy * g.dy)), lat = g.dx * vy - g.dy * vx, off = Math.hypot(vx - t * g.dx, vy - t * g.dy);
+      if (!best || off < best.off) best = { s: g.s0 + t, lat, off }; } return best; };
+    const out = [];
+    geo.features.forEach(ft => {
+      if ((ft.k !== 'water' && ft.k !== 'bunker') || ft.line) return;
+      if (dist(f.p, centroid(ft.c)) > tot + 300) return;
+      let lo = null, hi = null, side = 0, n = 0;
+      for (let k = 0; k < ft.c.length; k++) {                     // เดินรอบขอบทุก ~4 ม.
+        const a = ft.c[k], b = ft.c[(k + 1) % ft.c.length], A = xy(a), B = xy(b), m = Math.max(1, Math.ceil(Math.hypot(B[0] - A[0], B[1] - A[1]) / 4));
+        for (let j = 0; j < m; j++) { const t = j / m, q = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t], r = proj(q);
+          if (r.off > 35 || r.s < 5 || r.s > tot + 20) continue;
+          const ll = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; n++; side += r.lat;
+          if (!lo || r.s < lo.s) lo = { s: r.s, ll }; if (!hi || r.s > hi.s) hi = { s: r.s, ll }; }
+      }
+      if (!n) return;
+      const sd = side / n; if (out.some(o => o.k === ft.k && Math.abs(o.reach - lo.s) < 3 && Math.abs(o.carry - hi.s) < 3)) return; // รูปซ้ำในข้อมูล
+      out.push({ k: ft.k, reach: lo.s, carry: hi.s, pR: lo.ll, pC: hi.ll, side: sd > 8 ? 'L' : sd < -8 ? 'R' : 'C' });
+    });
+    return out.sort((a, b) => a.reach - b.reach).slice(0, 5);
+  }
+  function drawHaz(i, f) {
+    hzL.clearLayers(); const box = el.querySelector('#mhz'), hz = hazards(i, f);
+    box.hidden = !hz.length; if (!hz.length) { box.innerHTML = ''; return; }
+    const SIDE = { L: 'ซ้าย', R: 'ขวา', C: 'ขวางหน้า' };
+    box.innerHTML = hz.map(x => `<div><span>${x.k === 'water' ? '💧' : '🏖️'}</span><span class="hs">${SIDE[x.side]}</span><b>${fmt(x.reach)}</b><i>›</i><b>${fmt(x.carry)}</b></div>`).join('');
+    hz.forEach(x => {
+      const c = x.k === 'water' ? 'hzw' : 'hzb';
+      L.marker(x.pR, { icon: L.divIcon({ html: `<span class="mlbl ${c}">${fmt(x.reach)}</span>`, className: '', iconAnchor: [14, 10] }), interactive: false }).addTo(hzL);
+      if (x.carry - x.reach > 8) L.marker(x.pC, { icon: L.divIcon({ html: `<span class="mlbl ${c}">${fmt(x.carry)}</span>`, className: '', iconAnchor: [14, 10] }), interactive: false }).addTo(hzL);
+    });
+  }
   function drawDist() {
     const i = ctx.hole(), h = hg(i), f = from(), md = el.querySelector('#md');
+    drawHaz(i, h.green ? f : null);
     if (!h.green) { md.innerHTML = `<div class="muted" style="align-self:center;font-size:13px">ยังไม่มีจุดกรีนของหลุมนี้<br>กด ⚙️ เพื่อโหลดข้อมูลสนามหรือปักเอง</div>`; return; }
     if (!f) { md.innerHTML = `<div class="muted" style="align-self:center">รอ GPS...</div>`; return; }
     const gp = greenPoly(i); let fr = null, bk = null;
@@ -162,7 +203,7 @@ export function createMap(el, ctx) {
     if (T && h.green) L.polyline(h.line && h.line.length > 2 ? [T, ...h.line.slice(1)] : [T, h.green], { color: '#fff', weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(holeL);
     if (refit || i !== lastHole) {
       lastHole = i; target = null; tgtL.clearLayers();
-      const pts = [h.tee, h.green, ...(h.line || [])].filter(Boolean);
+      const pts = [T, h.green, ...(h.line || [])].filter(Boolean);
       if (pts.length >= 2) map.fitBounds(L.latLngBounds(pts), { padding: [70, 70], maxZoom: 19 });
       else if (h.green) map.setView(h.green, 18);
       else if (geo?.features?.length) map.fitBounds(L.latLngBounds(geo.features.flatMap(f => f.c)), { padding: [30, 30] });

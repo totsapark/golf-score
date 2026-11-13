@@ -50,7 +50,7 @@ const EN = {
   'จดสกอร์': 'Score', 'แผนที่': 'Map', 'สด': 'Live', 'สรุป': 'Summary', 'แก๊ง': 'Gang',
   // ---- จดสกอร์ ----
   'หลุมที่': 'Hole', 'ตีถึงออน': 'Strokes to green', 'พัตต์': 'Putts', 'ป่า/หาย': 'Lost', 'ตกน้ำ': 'Water', 'บังเกอร์': 'Bunker',
-  '⬅ ซ้าย': '⬅ Left', '⬆ ตรง': '⬆ Fairway', 'ขวา ➡': 'Right ➡', 'สกอร์': 'Score', '= ออน': '= to green', '+ พัตต์': '+ putts', '+ โทษ': '+ penalty', 'แต้ม': 'strokes',
+  '⬅ ซ้าย': '⬅ Left', 'ซ้าย': 'Left', 'ขวา': 'Right', 'ขวางหน้า': 'Across', '⬆ ตรง': '⬆ Fairway', 'ขวา ➡': 'Right ➡', 'สกอร์': 'Score', '= ออน': '= to green', '+ พัตต์': '+ putts', '+ โทษ': '+ penalty', 'แต้ม': 'strokes',
   'จดให้ (เฉพาะคนสร้างแก๊ง)': 'Record for (host only)', '(จดแทน)': '(for them)', 'จดแทน': 'for them', '🏌️ ช็อตหลุมนี้': '🏌️ Shots this hole', '📍 ตีแล้ว · บันทึกช็อต': '📍 Record shot',
   'ไปหลุม': 'Go to hole', 'ดูสรุปผล 🏁': 'See summary 🏁', '👥 หลุมนี้ของแก๊ง': '👥 This hole', '(เงินคิดด้วย': '(money by', 'เสีย': 'Pays', 'รอ': 'waiting',
   'หน้า': 'Front', 'กลางกรีน': 'Center', 'หลัง': 'Back', 'ถึงกลางกรีน': 'To center', 'ลบช็อต': 'Delete shot', 'เหลือ': 'left',

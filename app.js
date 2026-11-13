@@ -5,7 +5,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.12.0';
+const APPVER = '2.13.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
