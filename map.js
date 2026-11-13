@@ -1,5 +1,6 @@
 // แผนที่สนาม: ภาพดาวเทียม + กรีน/บังเกอร์/น้ำจาก OpenStreetMap, ระยะถึงกรีน (GPS), บันทึกช็อต
 import { hk, dist, par } from './golf.js';
+import { LANG } from './i18n.js';
 const L = window.L;
 export const SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -60,7 +61,7 @@ function clipToCourse(d, at) {
 }
 // ค้นหาสนามกอล์ฟจากชื่อ (OpenStreetMap Nominatim)
 export async function searchCourses(q) {
-  const go = async s => { const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(s)}&countrycodes=th&format=jsonv2&limit=8&accept-language=th,en`); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+  const go = async s => { const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(s)}&countrycodes=th&format=jsonv2&limit=8&accept-language=${LANG === 'en' ? 'en,th' : 'th,en'}`); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
   let res = await go(q);
   if (!res.some(r => r.type === 'golf_course') && !/golf|กอล์ฟ/i.test(q)) res = [...(await go(q + ' golf')), ...res];
   const seen = new Set();
@@ -114,7 +115,7 @@ export function createMap(el, ctx) {
 
   function hg(i) { return geo?.holes?.[hk(i)] || {}; }
   // แท่นทีตามสี Tee ที่เลือกในแก๊ง (Black/Gold/Blue/White/Red) ถ้าไม่ระบุใช้ Blue
-  function teeOf(h) { const t = h.tees; if (!t) return h.tee; const want = (ctx.G().meta?.tee || '').trim().toLowerCase(); const k = Object.keys(t).find(x => x.toLowerCase() === want) || (t.Blue ? 'Blue' : Object.keys(t)[0]); return t[k] || h.tee; }
+  function teeOf(h) { const t = h.tees; if (!t) return h.tee; let want = (ctx.G().meta?.tee || '').trim().toLowerCase(); if (want === 'yellow') want = 'gold'; const k = Object.keys(t).find(x => x.toLowerCase() === want) || (t.Blue ? 'Blue' : Object.keys(t)[0]); return t[k] || h.tee; }
   function greenPoly(i) {
     const g = hg(i).green; if (!g || !geo?.features) return null;
     const greens = geo.features.filter(f => f.k === 'green');

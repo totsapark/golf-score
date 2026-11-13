@@ -2,9 +2,10 @@ import { FIREBASE_CONFIG } from './config.js';
 import { makeStore } from './store.js';
 import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
+import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.8.0';
+const APPVER = '2.9.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -30,7 +31,7 @@ let HIST = jget(localStorage, 'golf2_hist', []);
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-function thDate(s) { if (!s) return ''; const [y, m, d] = s.split('-'); return `${+d} ${['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][m - 1]} ${(+y + 543) % 100}`; }
+function thDate(s) { return shortDate(s); }
 function ago(t) { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'เมื่อกี้' : s < 3600 ? Math.round(s / 60) + ' นาทีที่แล้ว' : Math.round(s / 3600) + ' ชม.ที่แล้ว'; }
 async function sha(s) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
 const COLORS = ['#2e7d32', '#ef6c00', '#6a1b9a', '#1565c0', '#c62828', '#00838f', '#5d4037', '#ad1457', '#558b2f', '#283593'];
@@ -123,9 +124,13 @@ async function scanQR() {
   tick();
 }
 
+// สีแท่นที: แดง เหลือง ขาว น้ำเงิน ดำ
+const TEES = [['Red', '#e53935', 'แดง'], ['Gold', '#fdd835', 'เหลือง'], ['White', '#ffffff', 'ขาว'], ['Blue', '#1e88e5', 'น้ำเงิน'], ['Black', '#212121', 'ดำ']];
+const teeIs = (cur, v) => { const c = String(cur || '').trim().toLowerCase(); return c === v.toLowerCase() || (v === 'Gold' && c === 'yellow'); };
+function teePick(cur, attrs) { return `<div class="teepick">${TEES.map(([v, c, l]) => `<button type="button" ${attrs(v)} class="${teeIs(cur, v) ? 'on' : ''}"><i style="background:${c}"></i>${l}</button>`).join('')}</div>`; }
 /* ---------- boot / routing ---------- */
 async function boot() {
-  applyPrefs();
+  initLang(PREF.lang); applyPrefs();
   try { ST = await makeStore(FIREBASE_CONFIG); } catch (e) { ST = null; }
   if (!ST) { UI.view = 'nocfg'; render(); return; }
   try { UID = await ST.auth(); } catch (e) {
@@ -377,6 +382,7 @@ function rHome() {
     <button class="btn red full" data-act="forgetall">ลบรายการทั้งหมด</button></div>` : ''}
   <button class="btn sec full" data-act="hist">📚 ประวัติ & Handicap Index</button>
   <a class="btn sec full" href="golf-live-tutorial.mp4" target="_blank">▶️ วิดีโอแนะนำการใช้งาน</a>
+  <div class="card" data-notr><h2>🌐 ภาษา / Language</h2><div class="seg"><button data-act="lang" data-v="th" class="${(PREF.lang || 'th') === 'th' ? 'on' : ''}">ไทย</button><button data-act="lang" data-v="en" class="${PREF.lang === 'en' ? 'on' : ''}">English</button></div></div>
   <p class="muted center" style="margin-top:16px">เวอร์ชัน ${APPVER}${MOCK ? ' · โหมดทดสอบ' : ''} · <a href="offline/" style="color:#1b5e20">แอปออฟไลน์ตัวเดิม</a></p>`;
 }
 function rCreate() {
@@ -386,7 +392,8 @@ function rCreate() {
     <label class="lb">สนาม</label><input id="c_course" list="clist" placeholder="ชื่อสนาม" value="${esc(UI.pendGeo?.name || '')}"><datalist id="clist">${cs.map(c => `<option value="${esc(c.name)}">`).join('')}</datalist>
     <button class="btn sec full" data-act="csearch">🔎 ค้นหาสนาม & ดาวน์โหลดแผนที่</button>
     <div id="c_geo">${UI.pendGeo ? `<div class="note ok">🗺️ ${courseReport(UI.pendGeo.d).html}</div>` : ''}</div>
-    <div class="grid2"><div><label class="lb">วันที่</label><input id="c_date" type="date" value="${today()}"></div><div><label class="lb">Tee</label><input id="c_tee" list="teelist" placeholder="เช่น Blue"><datalist id="teelist">${['Black', 'Gold', 'Blue', 'White', 'Red'].map(t => `<option value="${t}">`).join('')}</datalist></div></div>
+    <div class="grid2"><div><label class="lb">วันที่</label><input id="c_date" type="date" value="${today()}"></div></div>
+    <label class="lb">Tee (สีแท่นที)</label><div id="c_tee">${teePick(UI.pendGeo ? '' : '', v => `data-tee="${v}"`)}</div>
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
     <label class="lb">PIN แก๊ง 4 หลัก</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
@@ -399,6 +406,7 @@ function rCreate() {
     </div>
   <button class="btn full big-btn" data-act="docreate">✅ สร้างแก๊ง</button>
   <button class="btn sec full" data-act="home">ยกเลิก</button>`;
+  document.getElementById('c_tee').addEventListener('click', e => { const b = e.target.closest('[data-tee]'); if (!b) return; document.querySelectorAll('#c_tee [data-tee]').forEach(x => x.classList.toggle('on', x === b)); });
   document.getElementById('c_money').onclick = e => { const on = e.currentTarget.classList.toggle('on'); document.getElementById('c_moneyopts').style.display = on ? '' : 'none';  };
   $app.querySelectorAll('.seg').forEach(s => s.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; s.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }));
 }
@@ -415,7 +423,7 @@ async function doCreate() {
   if (!/^\d{4}$/.test(pin)) return badField('c_pin', 'ตั้ง PIN ตัวเลข 4 หลัก');
   let code; for (let k = 0; k < 5; k++) { code = newCode(); if (!(await ST.get('games/' + code + '/meta'))) break; }
   const holes = +seg('c_holes'), cid = UI.pendGeo?.d?.cid || (course ? slug(course) : ''), lib = UI.pendGeo?.d?.lib || (cid ? UI.courses?.[cid] || UI.courses?.[slug(course)] : null);
-  const meta = { code, course, cid, date: v('c_date') || today(), tee: v('c_tee') || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
+  const meta = { code, course, cid, date: v('c_date') || today(), tee: document.querySelector('#c_tee .on')?.dataset.tee || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
     pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), money: document.getElementById('c_money').classList.contains('on'), host: UID, lunch: '', createdAt: Date.now() };
   const pid = 'p' + Date.now().toString(36);
   const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true } }, holes: {} };
@@ -680,7 +688,8 @@ function rSum() {
     <button class="btn sec full" data-act="saveround">💾 ${HIST.some(r => r.rid === CODE) ? 'อัปเดตประวัติรอบนี้' : 'บันทึกรอบนี้ลงประวัติ (เครื่องนี้)'}</button>
     ${isHost() ? `<button class="btn sec full" data-act="savecourse">📍 บันทึกข้อมูลสนามไว้ใช้รอบหน้า</button>` : ''}</div>`;
 }
-function sumText() {
+function sumText() { return tr(sumTextTh()); }
+function sumTextTh() {
   const L = board(), hc = K.hasHC(G); let pot = 0; L.forEach(x => pot += x.s.money);
   let t = `⛳ ${G.meta.course || 'รอบกอล์ฟ'} · ${thDate(G.meta.date)}\n`;
   L.forEach((x, k) => { const s = x.s; t += `${k + 1}. ${x.p.name}: ${s.gross} (${K.fd(s.gross - s.par)})${hc ? ` Net ${s.net}` : ''} | พัตต์ ${s.putts} | GIR ${s.g}/${s.n}${K.moneyOn(G) ? ` | เสีย ${s.money}฿` : ''}\n`; });
@@ -719,7 +728,8 @@ function rGang() {
     ${host ? '<button class="btn sec full" data-act="savecourse">💾 บันทึกเป็นข้อมูลสนาม (รอบหน้า/คนอื่นไม่ต้องตั้งอีก)</button>' : ''}</div>
   <div class="card"><h2>⚙️ ตั้งค่ารอบ</h2>
     <label class="lb">สนาม</label>${inp('course', m.course, 'ชื่อสนาม')}
-    <div class="grid2"><div><label class="lb">วันที่</label>${inp('date', m.date, '', 'date')}</div><div><label class="lb">Tee (สีแท่นที)</label>${inp('tee', m.tee, 'เช่น Blue').replace('<input', '<input list="teelist2"')}<datalist id="teelist2">${['Black', 'Gold', 'Blue', 'White', 'Red'].map(t => `<option value="${t}">`).join('')}</datalist></div></div>
+    <div class="grid2"><div><label class="lb">วันที่</label>${inp('date', m.date, '', 'date')}</div></div>
+    <label class="lb">Tee (สีแท่นที)</label>${teePick(m.tee, v => `${dis} data-act="setmeta" data-k="tee" data-v="${v}"`)}
     <div class="grid2"><div><label class="lb">Course Rating</label>${inp('cr', m.cr, 'เช่น 72.3', 'number', 'decimal')}</div><div><label class="lb">Slope</label>${inp('slope', m.slope, 'เช่น 128', 'number', 'numeric')}</div></div>
     <label class="lb">จำนวนหลุม</label><div class="seg">${[9, 18].map(v => `<button ${dis} data-act="setmeta" data-k="holes" data-v="${v}" class="${+m.holes === v ? 'on' : ''}">${v} หลุม</button>`).join('')}</div>
     <div class="trow" style="margin-top:10px"><span><b>💰 กินตัง</b></span><button ${dis} class="sw ${K.moneyOn(G) ? 'on' : ''}" data-act="moneytoggle"></button></div>
@@ -731,6 +741,7 @@ function rGang() {
   <div class="card"><h2>📱 เครื่องนี้</h2>
     <label class="lb">หน่วยระยะ</label><div class="seg"><button data-act="unit" data-v="y" class="${PREF.unit === 'y' ? 'on' : ''}">หลา</button><button data-act="unit" data-v="m" class="${PREF.unit === 'm' ? 'on' : ''}">เมตร</button></div>
     <div class="trow"><span>โหมดกลางแดด</span><button class="sw ${PREF.sun ? 'on' : ''}" data-act="sun"></button></div>
+    <label class="lb" data-notr>🌐 ภาษา / Language</label><div data-notr><div class="seg"><button data-act="lang" data-v="th" class="${(PREF.lang || 'th') === 'th' ? 'on' : ''}">ไทย</button><button data-act="lang" data-v="en" class="${PREF.lang === 'en' ? 'on' : ''}">English</button></div></div>
     <div class="trow"><span>บันทึกช็อต (ไม้ + ตำแหน่ง)</span><button class="sw ${PREF.shots ? 'on' : ''}" data-act="shotspref"></button></div>
     <div class="trow"><span>กันจอดับ</span><button class="sw ${PREF.wake ? 'on' : ''}" data-act="wake"></button></div>
     <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>
@@ -782,7 +793,7 @@ async function scoreImage() {
   x.fillStyle = '#fff'; x.font = F('bold', 40); x.textBaseline = 'middle'; x.fillText('⛳ ' + (G.meta.course || 'สกอร์การ์ด'), M, 48);
   x.font = F('', 26); x.fillText(`${thDate(G.meta.date)} · ${N} หลุม · Par ${K.totalPar(G)}${G.meta.tee ? ' · Tee ' + G.meta.tee : ''}`, M, 92);
   let y = 150; x.textAlign = 'center';
-  const cell = (t, cx, cy, o = {}) => { x.font = F(o.b ? 'bold' : '', o.s || 24); x.fillStyle = o.c || '#1c2b1c'; x.fillText(t, cx, cy); };
+  const cell = (t, cx, cy, o = {}) => { x.font = F(o.b ? 'bold' : '', o.s || 24); x.fillStyle = o.c || '#1c2b1c'; x.fillText(tr(t), cx, cy); };
   blocks.forEach(([a, b, lab]) => { const cw = (W - 2 * M - NW - SW) / (b - a);
     x.fillStyle = '#e8f1e8'; x.fillRect(M, y, W - 2 * M, RH * 2); cell('หลุม', M + NW / 2, y + RH / 2, { b: 1 }); cell('Par', M + NW / 2, y + RH * 1.5, { c: '#556' });
     let tp = 0; for (let i = a; i < b; i++) { const cx = M + NW + cw * (i - a + .5); cell(String(i + 1), cx, y + RH / 2, { b: 1 }); cell(String(K.par(G, i)), cx, y + RH * 1.5, { c: '#556' }); tp += K.par(G, i); }
@@ -823,6 +834,7 @@ document.addEventListener('click', async e => {
     case 'create': UI.view = 'create'; UI.pendGeo = null; render(); return;
     case 'docreate': t.disabled = true; try { await doCreate(); } catch (er) { toast('สร้างไม่สำเร็จ: ' + er.message); } finally { if (t.isConnected) t.disabled = false; } return;
     case 'scanqr': scanQR(); return;
+    case 'lang': if ((PREF.lang || 'th') === v) return; setPref('lang', v); location.reload(); return;
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
     case 'hist': UI.view = 'hist'; render(); return;
