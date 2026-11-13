@@ -4,7 +4,7 @@ import * as K from './golf.js';
 import qrcode from './vendor/qrcode.mjs';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.6.0';
+const APPVER = '2.6.1';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -371,10 +371,17 @@ function rCreate() {
   document.getElementById('c_money').onclick = e => { const on = e.currentTarget.classList.toggle('on'); document.getElementById('c_moneyopts').style.display = on ? '' : 'none';  };
   $app.querySelectorAll('.seg').forEach(s => s.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; s.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }));
 }
+// ช่องที่กรอกไม่ครบ: เลื่อนไปหา ขึ้นกรอบแดง และวางเคอร์เซอร์ให้พิมพ์ได้เลย
+function badField(id, msg) {
+  const el = document.getElementById(id); toast(msg); if (!el) return;
+  el.classList.add('bad'); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => el.focus(), 300);
+  el.addEventListener('input', () => el.classList.remove('bad'), { once: true });
+}
 async function doCreate() {
   const v = id => document.getElementById(id).value.trim(), seg = id => document.querySelector(`#${id} .on`).dataset.v;
   const name = v('c_name'), pin = v('c_pin'), course = v('c_course');
-  if (!name) return toast('ใส่ชื่อของคุณ'); if (!/^\d{4}$/.test(pin)) return toast('PIN ต้องเป็นตัวเลข 4 หลัก');
+  if (!name) return badField('c_name', 'ใส่ชื่อของคุณ');
+  if (!/^\d{4}$/.test(pin)) return badField('c_pin', 'ตั้ง PIN ตัวเลข 4 หลัก');
   let code; for (let k = 0; k < 5; k++) { code = newCode(); if (!(await ST.get('games/' + code + '/meta'))) break; }
   const holes = +seg('c_holes'), cid = UI.pendGeo?.d?.cid || (course ? slug(course) : ''), lib = UI.pendGeo?.d?.lib || (cid ? UI.courses?.[cid] || UI.courses?.[slug(course)] : null);
   const meta = { code, course, cid, date: v('c_date') || today(), tee: v('c_tee') || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
@@ -783,7 +790,7 @@ document.addEventListener('click', async e => {
     case 'home': go(null); return;
     case 'retry': route(); return;
     case 'create': UI.view = 'create'; UI.pendGeo = null; render(); return;
-    case 'docreate': t.disabled = true; try { await doCreate(); } catch (er) { toast('สร้างไม่สำเร็จ: ' + er.message); t.disabled = false; } return;
+    case 'docreate': t.disabled = true; try { await doCreate(); } catch (er) { toast('สร้างไม่สำเร็จ: ' + er.message); } finally { if (t.isConnected) t.disabled = false; } return;
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
     case 'hist': UI.view = 'hist'; render(); return;
