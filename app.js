@@ -6,7 +6,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.18.0';
+const APPVER = '2.19.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -443,6 +443,7 @@ function rCreate() {
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
     <label class="lb">คุณตีด้วยไหม</label><div class="seg" id="c_role"><button data-v="" class="on">⛳ ตีด้วย</button><button data-v="watch">👀 ไม่ได้ตี (จัดการ/ลุ้น)</button></div>
+    <div id="c_lunchw" style="display:none"><label class="lb">ร่วมหารค่าข้าวด้วยไหม</label><div class="seg" id="c_lunch"><button data-v="1" class="on">🍛 ร่วม</button><button data-v="0">🙅 ไม่ร่วม</button></div></div>
     <label class="lb">PIN แก๊ง 4 หลัก</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
   <div class="card"><div class="trow"><h2 style="margin:0">💰 กินตัง</h2><button class="sw on" id="c_money" type="button"></button></div>
     <div id="c_moneyopts">
@@ -455,6 +456,7 @@ function rCreate() {
   <button class="btn full big-btn" data-act="docreate">✅ สร้างแก๊ง</button>
   <button class="btn sec full" data-act="home">ยกเลิก</button>`;
   document.getElementById('c_tee').addEventListener('click', e => { const b = e.target.closest('[data-tee]'); if (!b) return; document.querySelectorAll('#c_tee [data-tee]').forEach(x => x.classList.toggle('on', x === b)); });
+  document.getElementById('c_role').addEventListener('click', e => { const b = e.target.closest('button'); if (b) document.getElementById('c_lunchw').style.display = b.dataset.v === 'watch' ? '' : 'none'; });
   document.getElementById('c_mode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const m = b.dataset.v, def = m === 'last2' ? [20, 20, 10] : [30, 20, 10];
     [1, 2, 3].forEach(k => { document.getElementById('c_l' + k).textContent = MLAB[m][k - 1]; document.getElementById('c_a' + k).value = def[k - 1]; }); });
   document.getElementById('c_money').onclick = e => { const on = e.currentTarget.classList.toggle('on'); document.getElementById('c_moneyopts').style.display = on ? '' : 'none';  };
@@ -476,7 +478,7 @@ async function doCreate() {
   const meta = { code, course, cid, date: v('c_date') || today(), tee: document.querySelector('#c_tee .on')?.dataset.tee || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
     pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), moneyMode: seg('c_mode'), money: document.getElementById('c_money').classList.contains('on'), host: UID, lunch: '', createdAt: Date.now() };
   const pid = 'p' + Date.now().toString(36); meta.hostPid = pid;
-  const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true, ...(seg('c_role') === 'watch' ? { role: 'watch', lunch: true, hc: '' } : {}) } }, holes: {} };
+  const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true, ...(seg('c_role') === 'watch' ? { role: 'watch', lunch: seg('c_lunch') === '1', hc: '' } : {}) } }, holes: {} };
   const pg = UI.pendGeo?.d, P = pg ? parsOf(pg) : { pars: lib?.pars || {}, si: lib?.si || {}, n: Object.keys(lib?.pars || {}).length };
   for (let i = 0; i < 18; i++) game.holes[hk(i)] = { par: +P.pars[hk(i)] || 4, si: P.si[hk(i)] || '' };
   if (P.n) meta.parSrc = 'course';
@@ -513,14 +515,15 @@ async function checkPin() {
   if ((await sha(CODE + ':' + pin)) !== UI.joinMeta.pinHash) { toast('PIN ไม่ถูกต้อง'); return; }
   UI.pinOk = true; jset(DEV, 'golf2_pin_' + CODE, pin); render();
 }
-async function claim(pid, isNew, watch) {
+const askLunch = () => choose('ร่วมหารค่าข้าวด้วยไหม?', [['1', '🍛 ร่วมหารค่าข้าว'], ['0', '🙅 ไม่ร่วม · ดูอย่างเดียว']]);
+async function claim(pid, isNew, watch, lunch = true) {
   if (isNew) {
     const name = document.getElementById('j_name').value.trim(); if (!name) return toast('ใส่ชื่อก่อน');
     const ps = await ST.get('games/' + CODE + '/players') || {};
     if (Object.values(ps).some(p => p.name.trim() === name)) return toast('ชื่อนี้มีแล้ว แตะที่ชื่อด้านบนแทน');
     pid = 'p' + Date.now().toString(36);
     const rec = { name, hc: watch ? '' : document.getElementById('j_hc').value.trim(), uid: UID, color: COLORS[Object.keys(ps).length % COLORS.length], joinedAt: Date.now() };
-    if (watch) Object.assign(rec, { role: 'watch', lunch: true });
+    if (watch) Object.assign(rec, { role: 'watch', lunch });
     await ST.set(`games/${CODE}/players/${pid}`, rec);
   } else {
     const p = await ST.get(`games/${CODE}/players/${pid}`);
@@ -565,7 +568,8 @@ function rHole() {
   ${!PREF.shots ? '' : `<div class="card"><div class="ptop"><h2 style="margin:0">🏌️ ช็อตหลุมนี้</h2><span class="muted">${pid === ME ? '' : 'ของ ' + esc(p.name)}</span></div>
     ${shotList(pid, i)}
     <button class="btn full big-btn" data-act="shot">📍 ตีแล้ว · บันทึกช็อต</button>
-    </div>`}` : W ? `<div class="card center"><div style="font-size:34px">👀</div><b>คุณเข้าแก๊งแบบผู้ชม</b><p class="muted" style="margin:4px 0 0">${PL.length ? 'ดูคะแนนสดได้ทุกแท็บ · ไม่ถูกนับอันดับและไม่โดนกินตัง' : 'ยังไม่มีผู้เล่น · เพิ่มชื่อเพื่อนได้ในแท็บแก๊ง'}</p></div>` : ''}
+    </div>`}` : W ? `<div class="card center"><div style="font-size:34px">👀</div><b>คุณเข้าแก๊งแบบผู้ชม</b><p class="muted" style="margin:4px 0 0">${PL.length ? 'ดูคะแนนสดได้ทุกแท็บ · ไม่ถูกนับอันดับและไม่โดนกินตัง' : 'ยังไม่มีผู้เล่น · เพิ่มชื่อเพื่อนได้ในแท็บแก๊ง'}</p>
+    <button class="chip-l ${G.players[ME].lunch !== false ? 'on' : ''}" style="margin-top:10px;padding:9px 14px;font-size:14px" data-act="lunchw" data-v="${ME}">${G.players[ME].lunch !== false ? '🍛 ร่วมหารค่าข้าว · แตะเพื่อยกเลิก' : '🙅 ไม่ร่วมค่าข้าว · แตะเพื่อร่วม'}</button></div>` : ''}
   <div class="card"><h2>👥 หลุมนี้ของแก๊ง ${MON && K.hasHC(G) ? `<span class="muted">(เงินคิดด้วย ${G.meta.moneyBy === 'net' ? 'Net' : 'Gross'})</span>` : ''}</h2>
     <table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${K.hasHC(G) ? '<th>Net</th>' : ''}${MON ? '<th>เสีย</th>' : ''}</tr>${rows}</table>
     ${!MON ? '' : mo.picks ? `<div class="note">${mo.hits.map((h, k) => `${hitLabel(h, k, mo.mode)} → <b>${h.who.map(id => esc(G.players[id]?.name)).join(', ')}</b> ${h.amount} <span>บาท</span>`).join('<br>')}</div>` : ''}</div>
@@ -1008,12 +1012,13 @@ document.addEventListener('click', async e => {
     case 'checkpin': checkPin(); return;
     case 'claim': claim(v, false); return;
     case 'joinnew': claim(null, true); return;
-    case 'joinwatch': claim(null, true, true); return;
+    case 'joinwatch': { if (!document.getElementById('j_name').value.trim()) return toast('ใส่ชื่อก่อน'); const l = await askLunch(); if (l) claim(null, true, true, l === '1'); return; }
     case 'setrole': { const w = t.dataset.r === 'watch', q = G.players[v]; if (!q) return;
       if (w && Object.keys(G.scores?.[v] || {}).length && !(await ask(`เปลี่ยน "${q.name}" เป็นผู้ชม? (สกอร์ที่จดไว้จะไม่ถูกนับ)`))) return;
-      gw(`players/${v}/role`, w ? 'watch' : null); if (w && q.lunch == null) gw(`players/${v}/lunch`, true);
+      let l = null; if (w) { l = await askLunch(); if (!l) return; }
+      gw(`players/${v}/role`, w ? 'watch' : null); if (w) gw(`players/${v}/lunch`, l === '1');
       if (v === ME) { UI.editPid = w ? null : ME; } toast(w ? `👀 ${q.name} เป็นผู้ชมแล้ว` : `⛳ ${q.name} เป็นผู้เล่นแล้ว`); render(); return; }
-    case 'lunchw': { const q = G.players[v]; if (q) gw(`players/${v}/lunch`, q.lunch === false); render(); return; }
+    case 'lunchw': { const q = G.players[v]; if (!q) return; gw(`players/${v}/lunch`, q.lunch === false); toast(q.lunch === false ? `🍛 ${q.name} ร่วมหารค่าข้าว` : `🙅 ${q.name} ไม่ร่วมค่าข้าว`); render(); return; }
     case 'prev': if (i > 0) { UI.cur--; sendHole(UI.cur); } render(); scrollTo(0, 0); return;
     case 'next': if (i < K.nHoles(G) - 1) { UI.cur++; sendHole(UI.cur); } render(); scrollTo(0, 0); return;
     case 'jump': UI.cur = +v; sendHole(UI.cur); render(); return;

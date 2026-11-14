@@ -7,7 +7,9 @@ module.exports = async t => {
   await join(t, A, code, 'เบิร์ด');
   await W.goto(`${t.base}?g=${code}&mock=1&fast=1`); await W.waitForSelector('#j_pin');
   await W.fill('#j_pin', '1234'); await W.tap('[data-act=checkpin]'); await W.waitForSelector('#j_name');
-  await W.fill('#j_name', 'พลอย'); await W.tap('[data-act=joinwatch]'); await W.waitForSelector('nav [data-tab=live]');
+  await W.fill('#j_name', 'พลอย'); await W.tap('[data-act=joinwatch]');
+  await W.waitForSelector('.dlg [data-v="1"]'); t.ok('joining as spectator asks about lunch', (await W.$eval('.dlg', e => e.innerText)).includes('ร่วมหารค่าข้าว'));
+  await W.tap('.dlg [data-v="1"]'); await W.waitForSelector('nav [data-tab=live]');
   await W.waitForTimeout(400);
   let g = (await mockdb(H)).games[code];
   const wid = Object.keys(g.players).find(k => g.players[k].name === 'พลอย');
@@ -17,6 +19,14 @@ module.exports = async t => {
   t.ok('spectator sends no hole position', !g.pos?.[wid]);
   await W.tap('[data-tab=hole]'); await W.waitForTimeout(300);
   t.ok('spectator hole tab: no score steppers, spectator note', !(await W.$('[data-act=inc]')) && (await W.$eval('#app', e => e.innerText)).includes('คุณเข้าแก๊งแบบผู้ชม'));
+  const X = await P.page(); await X.goto(`${t.base}?g=${code}&mock=1&fast=1`); await X.fill('#j_pin', '1234'); await X.tap('[data-act=checkpin]'); await X.waitForSelector('#j_name');
+  await X.fill('#j_name', 'หมูกี้'); await X.tap('[data-act=joinwatch]'); await X.waitForSelector('.dlg [data-v="0"]'); await X.tap('.dlg [data-v="0"]'); await X.waitForSelector('nav [data-tab=live]'); await X.waitForTimeout(300);
+  g = (await mockdb(H)).games[code]; const xid = Object.keys(g.players).find(k => g.players[k].name === 'หมูกี้');
+  t.ok('spectator can join without sharing lunch', g.players[xid].role === 'watch' && g.players[xid].lunch === false, g.players[xid]);
+  await X.tap('[data-tab=hole]'); await X.waitForTimeout(200); await X.tap(`[data-act=lunchw][data-v=${xid}]`); await X.waitForTimeout(200);
+  g = (await mockdb(H)).games[code];
+  t.ok('spectator can switch own lunch choice from their screen', g.players[xid].lunch === true);
+  await X.tap(`[data-act=lunchw][data-v=${xid}]`); await X.waitForTimeout(200); await X.close();
   // players finish hole 1 → draw among 2 players only
   await H.tap('[data-tab=hole]'); await H.waitForSelector('[data-act=inc]');
   await record(H, 1, 1); await record(A, 2, 1);
@@ -30,7 +40,7 @@ module.exports = async t => {
   t.ok('leaderboard has the players, not the spectator', board.includes('ต้น') && board.includes('เบิร์ด') && !board.includes('พลอย'), board);
   // lunch: bill 1000, pot 50 (20+20+10) → split over 2 players + 1 spectator = 317 each
   await H.tap('[data-tab=gang]'); await H.fill('[data-meta=lunch]', '1000'); await H.press('[data-meta=lunch]', 'Tab'); await H.waitForTimeout(300);
-  t.ok('gang tab lists spectators', (await H.$eval('#app', e => e.innerText)).includes('ผู้ชม (1)'));
+  t.ok('gang tab lists spectators', (await H.$eval('#app', e => e.innerText)).includes('ผู้ชม (2)'));
   await H.tap('[data-tab=sum]'); await H.waitForTimeout(400);
   const money = await H.$eval('.card:has(h2:text("ค่ากับข้าว"))', e => e.innerText);
   t.ok('lunch split includes the spectator', /317/.test(money) && money.includes('พลอย'), money);
