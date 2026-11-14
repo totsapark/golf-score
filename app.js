@@ -6,7 +6,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.17.0';
+const APPVER = '2.18.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -200,7 +200,7 @@ function onGame(g) {
   for (const r in OUT) setIn(g, r, OUT[r].v); // ของที่ยังส่งไม่สำเร็จ ให้แสดงค่าล่าสุดของเครื่องนี้
   g.meta.code = CODE; G = g; saveCache(); setActive(CODE);
   if (!G.players?.[ME]) { setId(CODE, null); toast('คุณไม่ได้อยู่ในแก๊งนี้แล้ว'); route(); return; }
-  if (firstSnap) { const p = G.pos?.[ME]; if (p && p.hole == null) sendHole(UI.cur); else if (!p) sendHole(UI.cur); UI.cur = Math.min(UI.cur, K.nHoles(G) - 1); }
+  if (firstSnap && !amWatch()) { const p = G.pos?.[ME]; if (p && p.hole == null) sendHole(UI.cur); else if (!p) sendHole(UI.cur); UI.cur = Math.min(UI.cur, K.nHoles(G) - 1); }
   addMyGame({ code: CODE, name: G.meta.course || 'รอบกอล์ฟ', date: G.meta.date });
   autoDraw(); drawPopups();
   firstSnap = false;
@@ -239,7 +239,7 @@ function showDraw(i) {
   setTimeout(() => {
     const mo = K.holeMoney(G, i), P = G.players || {};
     d.querySelector('.dlgbox').innerHTML = `<p><b>🎲 ผลสุ่มหลุม ${i + 1}</b></p>${mo.hits.map((h, k) => `<div class="pick"><span>${hitLabel(h, k, mo.mode)}<br><b>${h.who.map(id => esc(P[id]?.name)).join(', ')}</b></span><span class="pay">${h.amount}฿</span></div>`).join('') || '<p class="muted">ไม่มีใครโดน</p>'}
-      ${mo.pay[ME] ? `<p class="pay">คุณเสีย ${mo.pay[ME]} บาท 😅</p>` : '<p>คุณรอด 😎</p>'}<button class="btn full" data-r>ตกลง</button>`;
+      ${amWatch() ? '<p>👀 ลุ้นอย่างเดียว</p>' : mo.pay[ME] ? `<p class="pay">คุณเสีย ${mo.pay[ME]} บาท 😅</p>` : '<p>คุณรอด 😎</p>'}<button class="btn full" data-r>ตกลง</button>`;
     d.addEventListener('click', e => { if (e.target.closest('[data-r]')) d.remove(); });
   }, 1400);
 }
@@ -263,7 +263,7 @@ function startGps() {
 }
 // ส่งตำแหน่งตัวเองให้เพื่อนเห็น: ทุก ~5 วิเมื่อขยับเกิน 5 ม. และอย่างน้อยทุก 30 วิ (ประหยัดแบต: 20 วิ / 10 ม. / 90 วิ)
 function sendLoc(force) {
-  if (!CODE || !ME || !gps || UI.view !== 'game') return;
+  if (!CODE || !ME || !gps || UI.view !== 'game' || amWatch()) return;
   const now = Date.now(), moved = lastPos ? K.dist([lastPos.lat, lastPos.lng], [gps.lat, gps.lng]) : 1e9;
   const [gap, mv, beat] = PREF.eco ? [20000, 10, 90000] : [5000, 5, 30000];
   if (!force && (now - lastPosSent < gap || (moved < mv && now - lastPosSent < beat))) return;
@@ -442,6 +442,7 @@ function rCreate() {
     <label class="lb">Tee (สีแท่นที)</label><div id="c_tee">${teePick(UI.pendGeo ? '' : '', v => `data-tee="${v}"`)}</div>
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
+    <label class="lb">คุณตีด้วยไหม</label><div class="seg" id="c_role"><button data-v="" class="on">⛳ ตีด้วย</button><button data-v="watch">👀 ไม่ได้ตี (จัดการ/ลุ้น)</button></div>
     <label class="lb">PIN แก๊ง 4 หลัก</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
   <div class="card"><div class="trow"><h2 style="margin:0">💰 กินตัง</h2><button class="sw on" id="c_money" type="button"></button></div>
     <div id="c_moneyopts">
@@ -475,7 +476,7 @@ async function doCreate() {
   const meta = { code, course, cid, date: v('c_date') || today(), tee: document.querySelector('#c_tee .on')?.dataset.tee || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
     pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), moneyMode: seg('c_mode'), money: document.getElementById('c_money').classList.contains('on'), host: UID, lunch: '', createdAt: Date.now() };
   const pid = 'p' + Date.now().toString(36); meta.hostPid = pid;
-  const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true } }, holes: {} };
+  const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true, ...(seg('c_role') === 'watch' ? { role: 'watch', lunch: true, hc: '' } : {}) } }, holes: {} };
   const pg = UI.pendGeo?.d, P = pg ? parsOf(pg) : { pars: lib?.pars || {}, si: lib?.si || {}, n: Object.keys(lib?.pars || {}).length };
   for (let i = 0; i < 18; i++) game.holes[hk(i)] = { par: +P.pars[hk(i)] || 4, si: P.si[hk(i)] || '' };
   if (P.n) meta.parSrc = 'course';
@@ -497,12 +498,14 @@ function rJoin() {
     return;
   }
   ST.get('games/' + CODE + '/players').then(ps => {
-    const list = Object.entries(ps || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => a.joinedAt - b.joinedAt);
+    const list = Object.entries(ps || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => a.joinedAt - b.joinedAt), nP = list.filter(p => p.role !== 'watch').length;
     $app.innerHTML = `<div class="card"><h2>👋 คุณคือใคร?</h2>
-      ${list.map(p => `<button class="btn sec full" data-act="claim" data-v="${p.id}" style="text-align:left">${esc(p.name)}${p.uid && p.uid !== UID ? ' <span class="muted">(ใช้อยู่ในเครื่องอื่น)</span>' : ''}</button>`).join('') || '<p class="muted">ยังไม่มีผู้เล่น</p>'}
+      ${list.map(p => `<button class="btn sec full" data-act="claim" data-v="${p.id}" style="text-align:left">${p.role === 'watch' ? '👀 ' : '⛳ '}${esc(p.name)}${p.role === 'watch' ? ' <span class="muted">(ผู้ชม)</span>' : ''}${p.uid && p.uid !== UID ? ' <span class="muted">(ใช้อยู่ในเครื่องอื่น)</span>' : ''}</button>`).join('') || '<p class="muted">ยังไม่มีใครในแก๊ง</p>'}
       </div>
-      ${list.length < 10 ? `<div class="card"><h2>＋ ผู้เล่นใหม่</h2><div class="grid2"><div><label class="lb">ชื่อ</label><input id="j_name" placeholder="ชื่อเล่น"></div><div><label class="lb">แต้มต่อ</label><input id="j_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
-        <button class="btn full big-btn" data-act="joinnew">เข้าแก๊ง</button></div>` : '<div class="note">แก๊งเต็ม 10 คนแล้ว</div>'}`;
+      <div class="card"><h2>＋ เข้าแก๊งใหม่</h2><div class="grid2"><div><label class="lb">ชื่อ</label><input id="j_name" placeholder="ชื่อเล่น"></div><div><label class="lb">แต้มต่อ (ถ้าตี)</label><input id="j_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
+        ${nP < 10 ? '<button class="btn full big-btn" data-act="joinnew">⛳ ตีด้วย · จดสกอร์ตัวเอง</button>' : '<div class="note">ผู้เล่นเต็ม 10 คนแล้ว</div>'}
+        <button class="btn sec full big-btn" data-act="joinwatch">👀 ไม่ได้ตี · ดูและลุ้นอย่างเดียว</button>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">ผู้ชมเห็นคะแนนสดทุกแท็บ แต่ไม่ถูกนับอันดับและไม่โดนกินตัง</p></div>`;
   });
 }
 async function checkPin() {
@@ -510,27 +513,33 @@ async function checkPin() {
   if ((await sha(CODE + ':' + pin)) !== UI.joinMeta.pinHash) { toast('PIN ไม่ถูกต้อง'); return; }
   UI.pinOk = true; jset(DEV, 'golf2_pin_' + CODE, pin); render();
 }
-async function claim(pid, isNew) {
+async function claim(pid, isNew, watch) {
   if (isNew) {
     const name = document.getElementById('j_name').value.trim(); if (!name) return toast('ใส่ชื่อก่อน');
     const ps = await ST.get('games/' + CODE + '/players') || {};
     if (Object.values(ps).some(p => p.name.trim() === name)) return toast('ชื่อนี้มีแล้ว แตะที่ชื่อด้านบนแทน');
     pid = 'p' + Date.now().toString(36);
-    await ST.set(`games/${CODE}/players/${pid}`, { name, hc: document.getElementById('j_hc').value.trim(), uid: UID, color: COLORS[Object.keys(ps).length % COLORS.length], joinedAt: Date.now() });
+    const rec = { name, hc: watch ? '' : document.getElementById('j_hc').value.trim(), uid: UID, color: COLORS[Object.keys(ps).length % COLORS.length], joinedAt: Date.now() };
+    if (watch) Object.assign(rec, { role: 'watch', lunch: true });
+    await ST.set(`games/${CODE}/players/${pid}`, rec);
   } else {
     const p = await ST.get(`games/${CODE}/players/${pid}`);
     if (p.uid && p.uid !== UID && !(await ask(`"${p.name}" ใช้อยู่ในเครื่องอื่น ย้ายมาใช้เครื่องนี้แทน?`))) return;
     await ST.update(`games/${CODE}/players/${pid}`, { uid: UID });
     if (p.host) await ST.set(`games/${CODE}/meta/host`, UID).catch(() => {}); // คนสร้างแก๊งย้ายเครื่อง → สิทธิ์ตามมาด้วย
   }
-  setId(CODE, { pid }); UI.tab = 'hole'; jset(DEV, 'golf2_tab', 'hole'); route();
+  const w = watch || (!isNew && (await ST.get(`games/${CODE}/players/${pid}/role`)) === 'watch');
+  UI.tab = w ? 'live' : 'hole'; setId(CODE, { pid }); jset(DEV, 'golf2_tab', UI.tab); route();
 }
 
 /* ---------- game: hole (จดสกอร์ตัวเอง) ---------- */
 const isHost = () => !!G.players?.[ME]?.host || G.meta.host === UID;
+const amWatch = () => !!G && K.isWatcher(G, ME);
+// คนที่กำลังจดให้: ผู้เล่นจดของตัวเอง · คนสร้างแก๊งเลือกจดแทนได้ · ผู้ชมไม่มี (ยกเว้นคนสร้างแก๊งที่เป็นผู้ชม)
+function editPid() { const PL = K.players(G); if (UI.editPid && PL.some(q => q.id === UI.editPid)) return UI.editPid; return amWatch() ? (isHost() ? PL[0]?.id || null : null) : ME; }
 function stepper(f, v) { return `<div class="step"><button data-act="dec" data-f="${f}">−</button><span>${v == null ? '–' : v}</span><button data-act="inc" data-f="${f}">＋</button></div>`; }
 function rHole() {
-  const i = UI.cur, N = K.nHoles(G), pid = UI.editPid || ME, p = G.players[pid] || G.players[ME], e = K.ent(G, pid, i) || {};
+  const i = UI.cur, N = K.nHoles(G), pid = editPid(), p = pid ? G.players[pid] : null, e = K.ent(G, pid, i) || {}, W = amWatch();
   const sc = K.score(G, pid, i), [lb, cl] = K.label(sc, K.par(G, i)), st = K.hStrokes(G, pid, i), pn = K.penOf(e), PL = K.players(G);
   let chips = ''; for (let k = 0; k < N; k++) chips += `<button data-act="jump" data-v="${k}" class="${k === i ? 'cur' : K.holeDone(G, k) ? 'all done' : K.score(G, pid, k) != null ? 'done' : ''}">${k + 1}</button>`;
   const mo = K.holeMoney(G, i), ord = K.holeOrder(G, i), MON = K.moneyOn(G);
@@ -544,8 +553,8 @@ function rHole() {
     <button data-act="next" ${i >= N - 1 ? 'disabled' : ''}>▶</button></div><div class="chips">${chips}</div>
 
     <div class="center" id="gpsd" style="margin-top:8px">${gpsLine()}</div></div>
-  ${isHost() && PL.length > 1 ? `<div class="card" style="padding:8px 12px"><label class="lb" style="margin-top:0">จดให้ (เฉพาะคนสร้างแก๊ง)</label><div class="chips" style="padding:0">${PL.map(q => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${q.id === pid ? 'cur' : ''}" data-act="editfor" data-v="${q.id}">${esc(q.name)}</button>`).join('')}</div></div>` : ''}
-  <div class="pcard ${sc != null ? 'ok' : ''}"><div class="ptop"><span class="n">${esc(p.name)}${pid === ME ? '' : ' <span class="muted">(จดแทน)</span>'}${st ? ` <span class="muted">+${st} แต้ม</span>` : ''}</span>
+  ${isHost() && (PL.length > 1 || (W && PL.length)) ? `<div class="card" style="padding:8px 12px"><label class="lb" style="margin-top:0">จดให้ (เฉพาะคนสร้างแก๊ง)</label><div class="chips" style="padding:0">${PL.map(q => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${q.id === pid ? 'cur' : ''}" data-act="editfor" data-v="${q.id}">${esc(q.name)}</button>`).join('')}</div></div>` : ''}
+  ${p ? `  <div class="pcard ${sc != null ? 'ok' : ''}"><div class="ptop"><span class="n">${esc(p.name)}${pid === ME ? '' : ' <span class="muted">(จดแทน)</span>'}${st ? ` <span class="muted">+${st} แต้ม</span>` : ''}</span>
       <span>${sc != null ? `<span class="badge ${cl}">${sc} · ${lb}</span>` : ''}${K.gir(G, pid, i) ? '<span class="badge b-gir">GIR</span>' : ''}</span></div>
     <div class="frow"><span class="t">ตีถึงออน</span>${stepper('on', e.on)}</div>
     <div class="frow"><span class="t">พัตต์</span>${stepper('putt', e.putt)}</div>
@@ -556,7 +565,7 @@ function rHole() {
   ${!PREF.shots ? '' : `<div class="card"><div class="ptop"><h2 style="margin:0">🏌️ ช็อตหลุมนี้</h2><span class="muted">${pid === ME ? '' : 'ของ ' + esc(p.name)}</span></div>
     ${shotList(pid, i)}
     <button class="btn full big-btn" data-act="shot">📍 ตีแล้ว · บันทึกช็อต</button>
-    </div>`}
+    </div>`}` : W ? `<div class="card center"><div style="font-size:34px">👀</div><b>คุณเข้าแก๊งแบบผู้ชม</b><p class="muted" style="margin:4px 0 0">${PL.length ? 'ดูคะแนนสดได้ทุกแท็บ · ไม่ถูกนับอันดับและไม่โดนกินตัง' : 'ยังไม่มีผู้เล่น · เพิ่มชื่อเพื่อนได้ในแท็บแก๊ง'}</p></div>` : ''}
   <div class="card"><h2>👥 หลุมนี้ของแก๊ง ${MON && K.hasHC(G) ? `<span class="muted">(เงินคิดด้วย ${G.meta.moneyBy === 'net' ? 'Net' : 'Gross'})</span>` : ''}</h2>
     <table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${K.hasHC(G) ? '<th>Net</th>' : ''}${MON ? '<th>เสีย</th>' : ''}</tr>${rows}</table>
     ${!MON ? '' : mo.picks ? `<div class="note">${mo.hits.map((h, k) => `${hitLabel(h, k, mo.mode)} → <b>${h.who.map(id => esc(G.players[id]?.name)).join(', ')}</b> ${h.amount} <span>บาท</span>`).join('<br>')}</div>` : ''}</div>
@@ -580,7 +589,7 @@ async function addShot(pid, i) {
   toast(s.lat != null ? `บันทึก ${club} แล้ว ✓` : `บันทึก ${club} แล้ว (ไม่มีตำแหน่ง GPS)`);
 }
 function writeEntry(pid, i, e) { e.t = Date.now(); gw(`scores/${pid}/${hk(i)}`, e); if (pid === ME) sendHole(i); }
-function sendHole(i) { jset(DEV, 'golf2_cur_' + CODE, i); gw(`pos/${ME}`, { hole: i, t: Date.now() }); }
+function sendHole(i) { jset(DEV, 'golf2_cur_' + CODE, i); if (amWatch()) return; gw(`pos/${ME}`, { hole: i, t: Date.now() }); }
 
 /* ---------- game: map ---------- */
 function rMap() {
@@ -594,7 +603,7 @@ function rMap() {
     saveShot: (i, s) => { gw(`shots/${ME}/${hk(i)}/s${s.t}`, s); sendLoc(true); },
     locs: () => LOCS,
     delShot: (i, k) => gw(`shots/${ME}/${hk(i)}/${k}`, null),
-    shotsOn: () => PREF.shots, geo: () => geoCache, saveGeo, searchDownload, downloadAt: at => downloadIntoGame(at),
+    shotsOn: () => PREF.shots && !amWatch(), geo: () => geoCache, saveGeo, searchDownload, downloadAt: at => downloadIntoGame(at),
     saveCourseGeo: g => { const cid = G.meta.cid || (G.meta.course ? slug(G.meta.course) : ''); if (!cid) return; if (!G.meta.cid) gw('meta/cid', cid); ST.set('coursegeo/' + cid, { ...g, t: Date.now() }).catch(() => {}); },
   });
 }
@@ -647,7 +656,7 @@ function rLive() {
   const feedH = feed.slice(0, 10).map(f => f.draw != null ? `<div>🎲 สุ่มเงินหลุม ${f.draw + 1}: อันดับ ${G.draws[hk(f.draw)].picks.join(', ')} <span class="muted">· ${ago(f.t)}</span></div>`
     : `<div><b>${esc(P[f.pid]?.name)}</b> หลุม ${f.i + 1}: <span class="badge ${K.label(f.sc, K.par(G, f.i))[1]}">${f.sc} · ${K.label(f.sc, K.par(G, f.i))[0]}</span> <span class="muted">· ${ago(f.t)}</span></div>`).join('');
   $app.innerHTML = `
-  <div class="card"><h2><span class="live"></span>ใครอยู่หลุมไหน</h2><div class="who">${who}</div></div>
+  <div class="card"><h2><span class="live"></span>ใครอยู่หลุมไหน</h2><div class="who">${who}</div>${K.watchers(G).length ? `<div class="muted" style="font-size:13px;margin-top:6px">👀 <span>กำลังลุ้นอยู่</span> ${K.watchers(G).length} <span>คน</span>: ${K.watchers(G).map(w => esc(w.name)).join(', ')}</div>` : ''}</div>
   <div class="card" style="padding:0;overflow:hidden"><div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px"><h2 style="margin:0">🗺️ ทุกคนอยู่ตรงไหน</h2><button class="btn sec" style="padding:6px 10px;font-size:14px" data-act="fitlive">ดูทุกคน</button></div>
     <div id="livemap" style="position:relative;height:340px;background:#333"></div><p class="muted" id="livecnt" style="padding:6px 12px;margin:0"></p></div>
   <div class="card"><h2>🏆 Leaderboard สด</h2>
@@ -797,8 +806,9 @@ function rSum() {
   const shortT = played.map(x => { const s = x.s, m = x.m; return `<tr>${nm(x)}<td>${K.av(s.putts, s.n, 2)}</td><td>${K.av(m.gPutt, s.g, 2)}</td><td>${m.one}</td><td>${m.three}</td><td>${m.chip}</td><td>${K.pc(m.scrO, m.scrN)}</td><td>${K.pc(m.bbO, m.bbN)}</td></tr>`; }).join('');
   const penT = list.map(x => { const m = x.m; return `<tr>${nm(x)}<td>${m.lost || '·'}</td><td>${m.water || '·'}</td><td>${m.ob || '·'}</td><td class="pay">${m.pen ? '+' + m.pen : '·'}</td><td>${m.bunker || '·'}</td><td>${m.sandN ? K.pc(m.sandO, m.sandN) : '-'}</td></tr>`; }).join('');
   const teeT = list.map(x => { const s = x.s, f = x.m.fw, miss = f.n - f.hit; return `<tr>${nm(x)}<td>${s.l}</td><td><b>${s.st}</b></td><td>${s.r}</td><td>${K.pc(f.hit, f.n)}</td><td>${f.hit ? K.fd(f.hitD / f.hit) : '-'}</td><td>${miss ? K.fd(f.missD / miss) : '-'}</td></tr>`; }).join('');
-  const bill = +G.meta.lunch || 0, n = list.length, extra = bill > pot && n ? Math.ceil((bill - pot) / n) : 0, left = pot > bill && bill ? pot - bill : 0;
-  const moneyT = list.map(x => `<tr>${nm(x)}<td>${x.m.hits}</td><td class="pay">${x.s.money} ฿</td>${bill ? `<td><b>${x.s.money + extra} ฿</b></td>` : ''}</tr>`).join('');
+  const bill = +G.meta.lunch || 0, n = K.lunchHeads(G), extra = bill > pot && n ? Math.ceil((bill - pot) / n) : 0, left = pot > bill && bill ? pot - bill : 0;
+  const moneyT = list.map(x => `<tr>${nm(x)}<td>${x.m.hits}</td><td class="pay">${x.s.money} ฿</td>${bill ? `<td><b>${x.s.money + extra} ฿</b></td>` : ''}</tr>`).join('')
+    + (bill ? K.watchers(G).filter(w => w.lunch !== false).map(w => `<tr><td class="l"><b>${esc(w.name)}</b> <span class="muted">👀</span></td><td>–</td><td>–</td><td><b>${extra} ฿</b></td></tr>`).join('') : '');
   const cl = clubStats(), u = PREF.unit === 'y' ? 1.09361 : 1, un = PREF.unit === 'y' ? 'หลา' : 'ม.';
   cl.sort((a, b) => CLUB_ORDER.indexOf(a.c) - CLUB_ORDER.indexOf(b.c));
   $app.innerHTML = `
@@ -832,9 +842,9 @@ function sumTextTh() {
   let t = `⛳ ${G.meta.course || 'รอบกอล์ฟ'} · ${thDate(G.meta.date)}\n`;
   L.forEach((x, k) => { const s = x.s; t += `${k + 1}. ${x.p.name}: ${s.gross} (${K.fd(s.gross - s.par)})${hc ? ` Net ${s.net}` : ''} | พัตต์ ${s.putts} | GIR ${s.g}/${s.n}${K.moneyOn(G) ? ` | เสีย ${s.money}฿` : ''}\n`; });
   const aw = K.awards(G, L.map(x => ({ ...x, m: K.more(G, x.p.id) }))); if (aw.length) { t += '\n🏅 รางวัล\n'; aw.forEach(a => t += `${a.icon} ${a.title}: ${a.names.join(', ')} (${a.v})\n`); }
-  const bill = +G.meta.lunch;
-  if (!K.moneyOn(G)) { if (bill) t += `\n🍛 ค่ากับข้าว ${bill} บาท → คนละ ${Math.ceil(bill / L.length)} บาท`; return t; }
-  t += `\n💰 กองกลาง ${pot} บาท`; if (bill) t += `\n🍛 ค่ากับข้าว ${bill} บาท → ${bill > pot ? `จ่ายเพิ่มคนละ ${Math.ceil((bill - pot) / L.length)} บาท` : pot > bill ? `เหลือ ${pot - bill} บาท` : 'พอดี'}`;
+  const bill = +G.meta.lunch, LN = K.lunchHeads(G);
+  if (!K.moneyOn(G)) { if (bill) t += `\n🍛 ค่ากับข้าว ${bill} บาท → คนละ ${Math.ceil(bill / LN)} บาท`; return t; }
+  t += `\n💰 กองกลาง ${pot} บาท`; if (bill) t += `\n🍛 ค่ากับข้าว ${bill} บาท → ${bill > pot ? `จ่ายเพิ่มคนละ ${Math.ceil((bill - pot) / LN)} บาท` : pot > bill ? `เหลือ ${pot - bill} บาท` : 'พอดี'}`;
   return t;
 }
 
@@ -852,8 +862,14 @@ function rGang() {
   <div class="card"><h2>👥 ผู้เล่น (${PL.length}/10)</h2>
     ${PL.map(p => `<div class="trow"><span class="av" style="background:${p.color || '#2e7d32'}">${esc(p.name.slice(0, 1))}</span><span style="flex:1"><b>${esc(p.name)}</b>${p.host ? ' 👑' : ''}${p.id === ME ? ' <span class="muted">(ฉัน)</span>' : ''}<br><span class="muted">${p.uid ? 'มีเครื่องจดแล้ว' : 'ยังไม่มีเครื่อง'}</span></span>
       <input ${host || p.id === ME ? '' : 'disabled'} type="number" inputmode="numeric" data-phc="${p.id}" value="${esc(p.hc)}" placeholder="แต้ม" style="width:64px;text-align:center">
+      ${host || p.id === ME ? `<button class="x" title="เปลี่ยนเป็นผู้ชม" data-act="setrole" data-v="${p.id}" data-r="watch" style="background:#eef">👀</button>` : ''}
       ${host && p.id !== ME ? `<button class="x" data-act="kick" data-v="${p.id}">✕</button>` : ''}</div>`).join('')}
     ${host ? `<div style="display:flex;gap:8px;margin-top:8px"><input id="addname" placeholder="เพิ่มชื่อเพื่อนล่วงหน้า"><button class="btn" data-act="addp" style="flex:none">เพิ่ม</button></div>` : ''}</div>
+  ${(() => { const WL = K.watchers(G); return WL.length ? `<div class="card"><h2>👀 ผู้ชม (${WL.length})</h2><p class="muted" style="margin:-4px 0 6px;font-size:12px">ไม่ได้ตี · ไม่นับอันดับ · ไม่โดนกินตัง · 🍛 = ร่วมหารค่าข้าว</p>
+    ${WL.map(w => `<div class="trow"><span class="av" style="background:#90a4ae">👀</span><span style="flex:1"><b>${esc(w.name)}</b>${w.host ? ' 👑' : ''}${w.id === ME ? ' <span class="muted">(ฉัน)</span>' : ''}</span>
+      <button ${host || w.id === ME ? '' : 'disabled'} class="chip-l ${w.lunch !== false ? 'on' : ''}" data-act="lunchw" data-v="${w.id}">🍛 ${w.lunch !== false ? 'ร่วม' : 'ไม่ร่วม'}</button>
+      ${(host || w.id === ME) && K.players(G).length < 10 ? `<button class="x" title="เปลี่ยนเป็นผู้เล่น" data-act="setrole" data-v="${w.id}" data-r="" style="background:#e8f5e9">⛳</button>` : ''}
+      ${host && w.id !== ME ? `<button class="x" data-act="kick" data-v="${w.id}">✕</button>` : ''}</div>`).join('')}</div>` : ''; })()}
   <div class="card"><h2>🗺️ แผนที่สนาม</h2>
     ${(() => { const st = geoStat(geoCache); return st.ok ? `<div class="note ok">✅ มีแผนที่แล้ว: ข้อมูลกรีน <b>${st.nh}</b> หลุม · รูปทรง <b>${st.nf}</b> ชิ้น</div>` : ''; })()}
     <button class="btn full" data-act="gsearch">🔎 ค้นหาสนามจากชื่อ & ดาวน์โหลด</button>
@@ -966,7 +982,7 @@ document.addEventListener('click', async e => {
   setTimeout(keepAwake, 0);
   if (t.dataset.tab) { UI.tab = t.dataset.tab; jset(DEV, 'golf2_tab', UI.tab); render(); scrollTo(0, 0); if (PREF.eco && G) { stopGps(); startGps(); } return; }
   const a = t.dataset.act, v = t.dataset.v;
-  const pid = UI.editPid || ME, i = UI.cur;
+  const pid = G ? editPid() : ME, i = UI.cur;
   switch (a) {
     case 'sun': setPref('sun', !PREF.sun); applyPrefs(); toast(PREF.sun ? '🌞 โหมดกลางแดด: เปิด (ตัวใหญ่ สีชัด)' : 'โหมดกลางแดด: ปิด'); render(); return;
     case 'wake': setPref('wake', !PREF.wake); keepAwake(); toast(PREF.wake ? '💡 กันจอดับ: เปิด' : 'กันจอดับ: ปิด'); render(); return;
@@ -992,6 +1008,12 @@ document.addEventListener('click', async e => {
     case 'checkpin': checkPin(); return;
     case 'claim': claim(v, false); return;
     case 'joinnew': claim(null, true); return;
+    case 'joinwatch': claim(null, true, true); return;
+    case 'setrole': { const w = t.dataset.r === 'watch', q = G.players[v]; if (!q) return;
+      if (w && Object.keys(G.scores?.[v] || {}).length && !(await ask(`เปลี่ยน "${q.name}" เป็นผู้ชม? (สกอร์ที่จดไว้จะไม่ถูกนับ)`))) return;
+      gw(`players/${v}/role`, w ? 'watch' : null); if (w && q.lunch == null) gw(`players/${v}/lunch`, true);
+      if (v === ME) { UI.editPid = w ? null : ME; } toast(w ? `👀 ${q.name} เป็นผู้ชมแล้ว` : `⛳ ${q.name} เป็นผู้เล่นแล้ว`); render(); return; }
+    case 'lunchw': { const q = G.players[v]; if (q) gw(`players/${v}/lunch`, q.lunch === false); render(); return; }
     case 'prev': if (i > 0) { UI.cur--; sendHole(UI.cur); } render(); scrollTo(0, 0); return;
     case 'next': if (i < K.nHoles(G) - 1) { UI.cur++; sendHole(UI.cur); } render(); scrollTo(0, 0); return;
     case 'jump': UI.cur = +v; sendHole(UI.cur); render(); return;

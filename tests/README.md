@@ -20,6 +20,7 @@ node run.js hazards    # only specs whose file name contains "hazards"
 | `04-offline` | signal lost: score kept on phone, delivered on reconnect, game resumes after reload |
 | `05-battery` | screen-on lock released after idle and re-taken on touch, GPS off in background, battery-saver polling |
 | `06-hazards` | course library search by alias, par/SI auto-fill, water/bunker reach & carry distances |
+| `09-spectators` | join as spectator: live view only, not ranked, not in the money draw, optional lunch share, non-playing organiser |
 | `07-db-rules` | `database.rules.json` in the Firebase emulator: players can only edit their own scores/shots/location |
 | `08-analysis` | strokes-lost breakdown, HCP level per area, running score, drive dispersion from GPS, multi-round trend |
 

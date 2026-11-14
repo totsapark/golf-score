@@ -4,7 +4,13 @@ export const DIST = [['Eagle+', '#b71c1c', '#fff'], ['Birdie', '#e57373', '#1c2b
 export const hk = i => 'h' + i;
 
 export function nHoles(G) { return +G.meta?.holes || 18; }
-export function players(G) { return Object.entries(G.players || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)); }
+const allP = G => Object.entries(G.players || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+// ผู้เล่น = คนที่ตีจริง (จดสกอร์ / นับอันดับ / กินตัง) · ผู้ชม (role: 'watch') = ดูและลุ้นอย่างเดียว
+export function players(G) { return allP(G).filter(p => p.role !== 'watch'); }
+export function watchers(G) { return allP(G).filter(p => p.role === 'watch'); }
+export function isWatcher(G, pid) { return G.players?.[pid]?.role === 'watch'; }
+// จำนวนคนหารค่าข้าว: ผู้เล่นทุกคน + ผู้ชมที่ร่วมกินข้าว (ค่าเริ่มต้น: ร่วม)
+export function lunchHeads(G) { return players(G).length + watchers(G).filter(w => w.lunch !== false).length; }
 export function par(G, i) { return +(G.holes?.[hk(i)]?.par) || 4; }
 export function si(G, i) { return +(G.holes?.[hk(i)]?.si) || 0; }
 export function totalPar(G) { let t = 0; for (let i = 0; i < nHoles(G); i++) t += par(G, i); return t; }
