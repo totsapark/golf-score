@@ -42,27 +42,47 @@ export function holeOrder(G, i) {
     return { id: p.id, sc, k: t === 'putt' ? sc + '|' + pt : t === 'one' ? p.id : String(sc), t: t === 'putt' ? pt : t === 'one' ? hsh(code + i + p.id) : 0 };
   }).filter(x => x.sc != null).sort((a, b) => a.sc - b.sc || a.t - b.t);
 }
-// สุ่ม 3 อันดับ (ไม่ซ้ำ) จาก 1..n
-export function makePicks(n) {
-  const k = Math.min(3, n), arr = Array.from({ length: n }, (_, j) => j + 1), out = [];
+// รูปแบบกินตัง: last2 = 2 อันดับสุดท้ายเสียทุกหลุม + สุ่มอีก 1 อันดับจากทุกคน (รวม 2 อันดับท้ายด้วย)
+//               rand3 = สุ่ม 3 อันดับ (แก๊งเก่าที่ไม่ได้ระบุ ใช้แบบนี้)
+export function moneyMode(G) { return G.meta?.moneyMode === 'last2' ? 'last2' : 'rand3'; }
+// สุ่มอันดับ (ไม่ซ้ำ) จาก 1..n
+export function makePicks(n, k = 3) {
+  k = Math.min(k, n); const arr = Array.from({ length: n }, (_, j) => j + 1), out = [];
   const rnd = m => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % m; };
   for (let j = 0; j < k; j++) out.push(arr.splice(rnd(arr.length), 1)[0]);
   return out;
 }
-// เงินของหลุม: picks[k] = อันดับที่สุ่มได้ครั้งที่ k → จ่าย amounts[k] (คนเดียวโดนหลายครั้ง จ่ายยอดสูงสุดครั้งเดียว)
+export function drawPicks(G, n) { return makePicks(n, moneyMode(G) === 'last2' ? 1 : 3); }
+// เงินของหลุม
+// rand3: picks[k] = อันดับที่สุ่มได้ครั้งที่ k → จ่าย amounts[k] (คนเดียวโดนหลายครั้ง จ่ายยอดสูงสุดครั้งเดียว)
+// last2: อันดับสุดท้ายจ่าย amounts[0], รองสุดท้ายจ่าย amounts[1] (เสมอกันจนโดนทั้งคู่ จ่ายยอดสูงกว่าครั้งเดียว)
+//        + อันดับที่สุ่มได้จ่าย amounts[2] เพิ่ม (2 อันดับท้ายโดนสุ่มซ้ำ ก็จ่ายเพิ่ม)
 export function holeMoney(G, i) {
-  const res = { pay: {}, hits: [], done: holeDone(G, i), picks: moneyOn(G) ? G.draws?.[hk(i)]?.picks || null : null };
+  const res = { pay: {}, hits: [], done: holeDone(G, i), picks: moneyOn(G) ? G.draws?.[hk(i)]?.picks || null : null, mode: G.draws?.[hk(i)]?.mode || moneyMode(G) };
+  if (!G.draws?.[hk(i)]?.mode && res.picks && res.picks.length > 1) res.mode = 'rand3'; // หลุมที่สุ่มไว้ก่อนมีรูปแบบใหม่
   if (!res.done || !res.picks) return res;
-  const ord = holeOrder(G, i), am = amounts(G);
+  const ord = holeOrder(G, i), am = amounts(G), n = ord.length;
+  const group = r => { const key = ord[r - 1].k; return ord.filter(y => y.k === key).map(y => y.id); };
+  if (res.mode === 'last2') {
+    const fixed = {};
+    [[n, am[0], 'last'], [n - 1, am[1], 'last2']].forEach(([r, a, kind]) => {
+      if (r < 1 || n < 2) return; const who = group(r);
+      if (!res.hits.some(h => h.who.join() === who.join())) res.hits.push({ rank: r, amount: a, who, kind });
+      who.forEach(id => { fixed[id] = Math.max(fixed[id] || 0, a); });
+    });
+    Object.assign(res.pay, fixed);
+    const r = res.picks[0];
+    if (r && r <= n) { const who = group(r); res.hits.push({ rank: r, amount: am[2], who, kind: 'rand' }); who.forEach(id => { res.pay[id] = (res.pay[id] || 0) + am[2]; }); }
+    return res;
+  }
   res.picks.forEach((r, k) => {
-    if (r > ord.length) return;
-    const key = ord[r - 1].k, who = ord.filter(y => y.k === key).map(y => y.id);
-    res.hits.push({ rank: r, amount: am[k], who });
+    if (r > n) return;
+    const who = group(r);
+    res.hits.push({ rank: r, amount: am[k], who, kind: 'rand' });
     who.forEach(id => { res.pay[id] = Math.max(res.pay[id] || 0, am[k]); });
   });
   return res;
 }
-
 export function stats(G, pid) {
   let gross = 0, pr = 0, putts = 0, n = 0, g = 0, st = 0, l = 0, r = 0, money = 0, ags = 0, nt = 0;
   const N = nHoles(G);
@@ -124,7 +144,7 @@ export function awards(G, list) {
   pick('💧', 'นักดำน้ำ', x => x.m.water, v => 'ตกน้ำ ' + v + ' ครั้ง', 'max', x => x.m.water > 0);
   pick('🚫', 'ราชา OB', x => x.m.ob, v => 'OB ' + v + ' ครั้ง', 'max', x => x.m.ob > 0);
   pick('🏖️', 'ขาประจำบังเกอร์', x => x.m.bunker, v => v + ' ครั้ง', 'max', x => x.m.bunker > 0);
-  pick('🎲', 'ดวงซวยประจำก๊วน', x => x.m.hits, v => 'โดนสุ่ม ' + v + ' หลุม', 'max', x => x.m.hits > 0);
+  pick('🎲', 'ดวงซวยประจำก๊วน', x => x.m.hits, v => 'เสียเงิน ' + v + ' หลุม', 'max', x => x.m.hits > 0);
   pick('💸', 'ATM ประจำก๊วน', x => x.s.money, v => v + ' บาท', 'max', x => x.s.money > 0);
   return A;
 }

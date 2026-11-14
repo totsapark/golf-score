@@ -17,6 +17,16 @@ module.exports = async t => {
   G.draws = { h0: { picks: [3, 1, 2] } };
   const m = K.holeMoney(G, 0);  // order: C 3, A 4, B 6 → rank3=B pays 30, rank1=C pays 20, rank2=A pays 10
   t.ok('holeMoney pays the drawn ranks', m.pay.b === 30 && m.pay.c === 20 && m.pay.a === 10, m.pay);
+  // last2: last place pays amounts[0], second last amounts[1], drawn rank pays amounts[2] on top (last two included)
+  G.meta.moneyMode = 'last2'; G.meta.amounts = [20, 20, 10]; G.draws = { h0: { picks: [3], mode: 'last2' } };
+  let m2 = K.holeMoney(G, 0);  // order: C 3, A 4, B 6 → last B 20, second last A 20, drawn rank 3 = B +10
+  t.ok('last2: last two pay, drawn rank pays extra even if already last', m2.pay.b === 30 && m2.pay.a === 20 && !m2.pay.c, m2.pay);
+  G.draws.h0.picks = [1]; m2 = K.holeMoney(G, 0);
+  t.ok('last2: drawn rank 1 (best score) pays too', m2.pay.c === 10 && m2.pay.b === 20 && m2.pay.a === 20, m2.pay);
+  t.ok('last2 draws one rank', K.drawPicks(G, 8).length === 1 && K.drawPicks({ meta: {} }, 8).length === 3);
+  G.draws.h0 = { picks: [3, 1, 2] };
+  t.ok('old draws (3 picks, no mode) keep the old rule after switching', K.holeMoney(G, 0).pay.b === 20 && K.holeMoney(G, 0).mode === 'rand3', K.holeMoney(G, 0));
+  G.meta.moneyMode = undefined; G.meta.amounts = [30, 20, 10];
   G.meta.money = false;
   t.ok('money off → no picks', K.holeMoney(G, 0).picks === null);
   t.ok('handicap index needs 3 rounds', K.hIndex([10, 12]) === null && typeof K.hIndex([10, 12, 14]) === 'number');

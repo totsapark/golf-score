@@ -6,7 +6,7 @@ import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.16.0';
+const APPVER = '2.17.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -216,7 +216,7 @@ function autoDraw() {
   if (!G) return;
   const n = K.players(G).length; if (n < 2 || !K.moneyOn(G)) return;
   for (let i = 0; i < K.nHoles(G); i++) if (K.holeDone(G, i) && !G.draws?.[hk(i)] && Date.now() - lastEdit(i) >= DRAW_DELAY)
-    ST.txn(`games/${CODE}/draws/${hk(i)}`, cur => cur || { picks: K.makePicks(n), t: Date.now() }).catch(() => {});
+    ST.txn(`games/${CODE}/draws/${hk(i)}`, cur => cur || { picks: K.drawPicks(G, n), mode: K.moneyMode(G), t: Date.now() }).catch(() => {});
 }
 setInterval(() => { if (UI.view === 'game') autoDraw(); }, 4000);
 function drawPopups() {
@@ -226,11 +226,19 @@ function drawPopups() {
   if (firstSnap || !fresh.length || !K.moneyOn(G)) return;
   fresh.forEach(h => showDraw(+h.slice(1)));
 }
+// ชื่อช่องเงิน 3 ช่อง ตามรูปแบบกินตัง
+const MLAB = { last2: ['อันดับสุดท้าย', 'รองสุดท้าย', '🎲 สุ่ม 1 อันดับ'], rand3: ['สุ่มครั้งที่ 1', 'สุ่มครั้งที่ 2', 'สุ่มครั้งที่ 3'] };
+const MMODES = [['last2', '2 อันดับท้าย + สุ่ม 1'], ['rand3', 'สุ่ม 3 อันดับ']];
+function hitLabel(h, k, mode) {
+  if (h.kind === 'last') return `<span>อันดับสุดท้าย</span> <span class="muted">(${h.rank})</span>`;
+  if (h.kind === 'last2') return `<span>รองสุดท้าย</span> <span class="muted">(${h.rank})</span>`;
+  return mode === 'last2' ? `<span>🎲 สุ่มได้อันดับ</span> <b>${h.rank}</b>` : `<span>ครั้งที่</span> ${k + 1}: <span>อันดับ</span> <b>${h.rank}</b>`;
+}
 function showDraw(i) {
   const d = dlg(`<p><b>🎲 สุ่มเงินหลุม ${i + 1}</b></p><div class="dice">🎲</div><p class="muted">กำลังสุ่ม...</p>`);
   setTimeout(() => {
     const mo = K.holeMoney(G, i), P = G.players || {};
-    d.querySelector('.dlgbox').innerHTML = `<p><b>🎲 ผลสุ่มหลุม ${i + 1}</b></p>${mo.hits.map((h, k) => `<div class="pick"><span>ครั้งที่ ${k + 1}: อันดับ <b>${h.rank}</b><br><b>${h.who.map(id => esc(P[id]?.name)).join(', ')}</b></span><span class="pay">${h.amount}฿</span></div>`).join('') || '<p class="muted">ไม่มีใครโดน</p>'}
+    d.querySelector('.dlgbox').innerHTML = `<p><b>🎲 ผลสุ่มหลุม ${i + 1}</b></p>${mo.hits.map((h, k) => `<div class="pick"><span>${hitLabel(h, k, mo.mode)}<br><b>${h.who.map(id => esc(P[id]?.name)).join(', ')}</b></span><span class="pay">${h.amount}฿</span></div>`).join('') || '<p class="muted">ไม่มีใครโดน</p>'}
       ${mo.pay[ME] ? `<p class="pay">คุณเสีย ${mo.pay[ME]} บาท 😅</p>` : '<p>คุณรอด 😎</p>'}<button class="btn full" data-r>ตกลง</button>`;
     d.addEventListener('click', e => { if (e.target.closest('[data-r]')) d.remove(); });
   }, 1400);
@@ -435,16 +443,19 @@ function rCreate() {
     <label class="lb">จำนวนหลุม</label><div class="seg" id="c_holes"><button data-v="9">9 หลุม</button><button data-v="18" class="on">18 หลุม</button></div>
     <div class="grid2"><div><label class="lb">ชื่อของคุณ</label><input id="c_name" placeholder="ชื่อ"></div><div><label class="lb">แต้มต่อของคุณ</label><input id="c_hc" type="number" inputmode="numeric" placeholder="ไม่ต่อเว้นว่าง"></div></div>
     <label class="lb">PIN แก๊ง 4 หลัก</label><input id="c_pin" class="pin" type="tel" inputmode="numeric" maxlength="4" placeholder="••••"></div>
-  <div class="card"><div class="trow"><h2 style="margin:0">💰 กินตัง: สุ่ม 3 อันดับทุกหลุม</h2><button class="sw on" id="c_money" type="button"></button></div>
+  <div class="card"><div class="trow"><h2 style="margin:0">💰 กินตัง</h2><button class="sw on" id="c_money" type="button"></button></div>
     <div id="c_moneyopts">
     
-    <div class="grid3"><div><label class="lb">สุ่มครั้งที่ 1</label><input id="c_a1" type="number" inputmode="numeric" value="30"></div><div><label class="lb">ครั้งที่ 2</label><input id="c_a2" type="number" inputmode="numeric" value="20"></div><div><label class="lb">ครั้งที่ 3</label><input id="c_a3" type="number" inputmode="numeric" value="10"></div></div>
+    <label class="lb">รูปแบบ</label><div class="seg" id="c_mode">${MMODES.map(([v, t], k) => `<button data-v="${v}" class="${k ? '' : 'on'}">${t}</button>`).join('')}</div>
+    <div class="grid3">${[20, 20, 10].map((a, k) => `<div><label class="lb" id="c_l${k + 1}">${MLAB.last2[k]}</label><input id="c_a${k + 1}" type="number" inputmode="numeric" value="${a}"></div>`).join('')}</div>
     <label class="lb">จัดอันดับด้วย</label><div class="seg" id="c_by"><button data-v="gross" class="on">Gross</button><button data-v="net">Net (หักแต้มต่อ)</button></div>
-    <label class="lb">อันดับที่สุ่มได้มีคนเสมอกัน</label><div class="seg" id="c_tie"><button data-v="all" class="on">เสียทุกคน</button><button data-v="putt">ตัดด้วยพัตต์</button><button data-v="one">สุ่ม 1 คน</button></div></div>
+    <label class="lb">อันดับที่โดนมีคนเสมอกัน</label><div class="seg" id="c_tie"><button data-v="all" class="on">เสียทุกคน</button><button data-v="putt">ตัดด้วยพัตต์</button><button data-v="one">สุ่ม 1 คน</button></div></div>
     </div>
   <button class="btn full big-btn" data-act="docreate">✅ สร้างแก๊ง</button>
   <button class="btn sec full" data-act="home">ยกเลิก</button>`;
   document.getElementById('c_tee').addEventListener('click', e => { const b = e.target.closest('[data-tee]'); if (!b) return; document.querySelectorAll('#c_tee [data-tee]').forEach(x => x.classList.toggle('on', x === b)); });
+  document.getElementById('c_mode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const m = b.dataset.v, def = m === 'last2' ? [20, 20, 10] : [30, 20, 10];
+    [1, 2, 3].forEach(k => { document.getElementById('c_l' + k).textContent = MLAB[m][k - 1]; document.getElementById('c_a' + k).value = def[k - 1]; }); });
   document.getElementById('c_money').onclick = e => { const on = e.currentTarget.classList.toggle('on'); document.getElementById('c_moneyopts').style.display = on ? '' : 'none';  };
   $app.querySelectorAll('.seg').forEach(s => s.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; s.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); }));
 }
@@ -462,7 +473,7 @@ async function doCreate() {
   let code; for (let k = 0; k < 5; k++) { code = newCode(); if (!(await ST.get('games/' + code + '/meta'))) break; }
   const holes = +seg('c_holes'), cid = UI.pendGeo?.d?.cid || (course ? slug(course) : ''), lib = UI.pendGeo?.d?.lib || (cid ? UI.courses?.[cid] || UI.courses?.[slug(course)] : null);
   const meta = { code, course, cid, date: v('c_date') || today(), tee: document.querySelector('#c_tee .on')?.dataset.tee || lib?.tee || '', holes, cr: lib?.cr || '', slope: lib?.slope || '',
-    pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), money: document.getElementById('c_money').classList.contains('on'), host: UID, lunch: '', createdAt: Date.now() };
+    pinHash: await sha(code + ':' + pin), amounts: [+v('c_a1') || 0, +v('c_a2') || 0, +v('c_a3') || 0], moneyBy: seg('c_by'), tieRule: seg('c_tie'), moneyMode: seg('c_mode'), money: document.getElementById('c_money').classList.contains('on'), host: UID, lunch: '', createdAt: Date.now() };
   const pid = 'p' + Date.now().toString(36); meta.hostPid = pid;
   const game = { meta, players: { [pid]: { name, hc: v('c_hc'), uid: UID, color: COLORS[0], joinedAt: Date.now(), host: true } }, holes: {} };
   const pg = UI.pendGeo?.d, P = pg ? parsOf(pg) : { pars: lib?.pars || {}, si: lib?.si || {}, n: Object.keys(lib?.pars || {}).length };
@@ -548,7 +559,7 @@ function rHole() {
     </div>`}
   <div class="card"><h2>👥 หลุมนี้ของแก๊ง ${MON && K.hasHC(G) ? `<span class="muted">(เงินคิดด้วย ${G.meta.moneyBy === 'net' ? 'Net' : 'Gross'})</span>` : ''}</h2>
     <table><tr><th>#</th><th class="l">ผู้เล่น</th><th>Gross</th>${K.hasHC(G) ? '<th>Net</th>' : ''}${MON ? '<th>เสีย</th>' : ''}</tr>${rows}</table>
-    ${!MON ? '' : mo.picks ? `<div class="note">🎲 สุ่มได้อันดับ ${mo.picks.join(', ')} → ${K.amounts(G).slice(0, mo.picks.length).join(' / ')} บาท</div>` : ''}</div>
+    ${!MON ? '' : mo.picks ? `<div class="note">${mo.hits.map((h, k) => `${hitLabel(h, k, mo.mode)} → <b>${h.who.map(id => esc(G.players[id]?.name)).join(', ')}</b> ${h.amount} <span>บาท</span>`).join('<br>')}</div>` : ''}</div>
   ${i < N - 1 ? `<button class="btn full big-btn" data-act="next">ไปหลุม ${i + 2} ▶</button>` : `<button class="btn full big-btn" data-act="tab" data-v="sum">ดูสรุปผล 🏁</button>`}`;
 }
 function shotsOf(pid, i) { return Object.entries(G.shots?.[pid]?.[hk(i)] || {}).map(([k, v]) => ({ k, ...v })).sort((a, b) => a.t - b.t); }
@@ -799,7 +810,7 @@ function rSum() {
   ${aw ? `<div class="card"><h2>🏅 รางวัลประจำรอบ</h2>${aw}</div>` : ''}
   ${!K.moneyOn(G) ? (bill ? `<div class="card"><h2>🍛 ค่ากับข้าว</h2><div class="note">ค่ากับข้าว ${bill} บาท หาร ${n} คน → คนละ <b>${Math.ceil(bill / n)} บาท</b></div></div>` : '') : `<div class="card"><h2>💰 เงิน & ค่ากับข้าว</h2><div class="big">กองกลาง ${pot} บาท</div>
     ${bill ? `<div class="note">ค่ากับข้าว ${bill} บาท → ${extra ? `กองกลางไม่พอ ทุกคนจ่ายเพิ่มคนละ <b>${extra} บาท</b>` : left ? `กองกลางเหลือ <b>${left} บาท</b>` : 'พอดี 👍'}</div>` : ''}
-    <div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>โดนสุ่ม<br>(หลุม)</th><th>เข้ากอง</th>${bill ? '<th>รวมจ่าย<br>ค่าข้าว</th>' : ''}</tr>${moneyT}</table></div></div>`}
+    <div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>เสียเงิน<br>(หลุม)</th><th>เข้ากอง</th>${bill ? '<th>รวมจ่าย<br>ค่าข้าว</th>' : ''}</tr>${moneyT}</table></div></div>`}
   ${bars ? `<div class="card"><h2>📈 การกระจายสกอร์</h2><div class="legend">${legend}</div>${bars}</div>` : ''}
   ${parT ? `<div class="card"><h2>⛳ สกอร์เฉลี่ยตาม Par${two ? ' / หน้า-หลัง' : ''}</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>Par 3</th><th>Par 4</th><th>Par 5</th>${two ? '<th>OUT</th><th>IN</th>' : ''}<th>ดีสุด</th><th>แย่สุด</th></tr>${parT}</table></div></div>` : ''}
   ${shortT ? `<div class="card"><h2>🎯 พัตต์ & ลูกสั้น</h2><div class="scroll"><table><tr><th class="l">ผู้เล่น</th><th>พัตต์<br>/หลุม</th><th>พัตต์<br>/GIR</th><th>1 พัตต์</th><th>3 พัตต์+</th><th>ชิปลง</th><th>Scram-<br>bling</th><th>Bounce<br>back</th></tr>${shortT}</table></div></div>` : ''}
@@ -861,9 +872,10 @@ function rGang() {
     <label class="lb">จำนวนหลุม</label><div class="seg">${[9, 18].map(v => `<button ${dis} data-act="setmeta" data-k="holes" data-v="${v}" class="${+m.holes === v ? 'on' : ''}">${v} หลุม</button>`).join('')}</div>
     <div class="trow" style="margin-top:10px"><span><b>💰 กินตัง</b></span><button ${dis} class="sw ${K.moneyOn(G) ? 'on' : ''}" data-act="moneytoggle"></button></div>
     <div ${K.moneyOn(G) ? '' : 'hidden'}>
-    <label class="lb">💰 เงินสุ่ม 3 อันดับต่อหลุม (บาท)</label><div class="grid3">${[0, 1, 2].map(k => `<input ${dis} type="number" inputmode="numeric" data-amt="${k}" value="${am[k]}">`).join('')}</div>
+    <label class="lb">รูปแบบ</label><div class="seg">${MMODES.map(([v, t]) => `<button ${dis} data-act="setmeta" data-k="moneyMode" data-v="${v}" class="${K.moneyMode(G) === v ? 'on' : ''}">${t}</button>`).join('')}</div>
+    <label class="lb">💰 เงินต่อหลุม (บาท)</label><div class="grid3">${[0, 1, 2].map(k => `<div><label class="lb" style="margin-top:0">${MLAB[K.moneyMode(G)][k]}</label><input ${dis} type="number" inputmode="numeric" data-amt="${k}" value="${am[k]}"></div>`).join('')}</div>
     <label class="lb">จัดอันดับเงินด้วย</label><div class="seg">${[['gross', 'Gross'], ['net', 'Net']].map(([v, t]) => `<button ${dis} data-act="setmeta" data-k="moneyBy" data-v="${v}" class="${(m.moneyBy || 'gross') === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-    <label class="lb">อันดับที่สุ่มได้มีคนเสมอ</label><div class="seg">${[['all', 'เสียทุกคน'], ['putt', 'ตัดด้วยพัตต์'], ['one', 'สุ่ม 1 คน']].map(([v, t]) => `<button ${dis} data-act="setmeta" data-k="tieRule" data-v="${v}" class="${(m.tieRule || 'all') === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+    <label class="lb">อันดับที่โดนมีคนเสมอกัน</label><div class="seg">${[['all', 'เสียทุกคน'], ['putt', 'ตัดด้วยพัตต์'], ['one', 'สุ่ม 1 คน']].map(([v, t]) => `<button ${dis} data-act="setmeta" data-k="tieRule" data-v="${v}" class="${(m.tieRule || 'all') === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>
     <label class="lb">🍛 ค่ากับข้าว (บาท)</label>${inp('lunch', m.lunch, 'ใส่ยอดบิลตอนจบ', 'number', 'numeric')}</div>
   <div class="card"><h2>📱 เครื่องนี้</h2>
     <label class="lb">หน่วยระยะ</label><div class="seg"><button data-act="unit" data-v="y" class="${PREF.unit === 'y' ? 'on' : ''}">หลา</button><button data-act="unit" data-v="m" class="${PREF.unit === 'm' ? 'on' : ''}">เมตร</button></div>
@@ -1015,7 +1027,7 @@ document.addEventListener('click', async e => {
       gw(`players/p${Date.now().toString(36)}`, { name: n, hc: '', uid: '', color: COLORS[K.players(G).length % COLORS.length], joinedAt: Date.now() }); return; }
     case 'kick': { const p = G.players[v]; if (await ask(`เอา "${p.name}" ออกจากแก๊ง? (คะแนนของคนนี้จะหายด้วย)`)) ['players/', 'scores/', 'pos/', 'shots/'].forEach(k => gw(k + v, null)); return; }
     case 'moneytoggle': { const on = !K.moneyOn(G); if (!on && !(await ask('ปิดกินตัง? (ไม่สุ่มเงินหลุมต่อไป ยอดที่คิดไปแล้วจะไม่แสดง)'))) return; gw('meta/money', on); toast(on ? '💰 เปิดกินตังแล้ว' : 'ปิดกินตังแล้ว'); return; }
-    case 'setmeta': gw(`meta/${t.dataset.k}`, t.dataset.k === 'holes' ? +v : v); return;
+    case 'setmeta': gw(`meta/${t.dataset.k}`, t.dataset.k === 'holes' ? +v : v); if (t.dataset.k === 'moneyMode') toast('ใช้กับหลุมที่ยังไม่ได้สุ่ม · หลุมที่จ่ายไปแล้วไม่เปลี่ยน'); return;
     case 'unit': setPref('unit', v); render(); return;
     case 'eco': setPref('eco', !PREF.eco); toast(PREF.eco ? '🔋 ประหยัดแบต: เปิด (GPS ทุก 20 วิ · จอดับเองถ้าไม่แตะ 1 นาที)' : 'ประหยัดแบต: ปิด'); if (G) { stopGps(); startGps(); } keepAwake(); render(); return;
     case 'shotspref': setPref('shots', !PREF.shots); toast(PREF.shots ? '📍 เปิดบันทึกช็อต' : 'ปิดบันทึกช็อตแล้ว'); render(); return;
