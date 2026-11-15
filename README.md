@@ -23,3 +23,6 @@
 5. Project settings → Your apps → Web (`</>`) → Register app → คัดลอก `firebaseConfig` ใส่ใน `config.js`
 
 ทดสอบโดยไม่ต้องมี Firebase: เปิด `?mock=1` (ข้อมูลอยู่ในเบราว์เซอร์เครื่องเดียว)
+
+## แอปแยก: 🏋️ ซ้อมกอล์ฟ
+https://totsapark.github.io/golf-score/practice/ · ใช้มือถือช่วยซ้อม (แผนซ้อม, ซ้อมไดรฟ์, ระยะแต่ละไม้, จุดตั้ง, กล้องวงสวิง, จังหวะ) · ดู [`practice/README.md`](practice/README.md)

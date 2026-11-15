@@ -4,7 +4,7 @@
 const C = 'golflive-v27', TILES = 'golflive-tiles';
 const SHELL = ['./', './index.html', './app.js', './store.js', './golf.js', './analysis.js', './map.js', './config.js', './i18n.js', './vendor/fb.js', './vendor/leaflet.js', './vendor/leaflet.css', './vendor/qrcode.mjs', './vendor/jsQR.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))); self.skipWaiting(); });
-self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== C && x !== TILES).map(x => caches.delete(x))))); self.clients.claim(); });
+self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x.startsWith('golflive') && x !== C && x !== TILES).map(x => caches.delete(x))))); self.clients.claim(); });
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
