@@ -24,6 +24,7 @@ node run.js hazards    # only specs whose file name contains "hazards"
 | `07-db-rules` | `database.rules.json` in the Firebase emulator: players can only edit their own scores/shots/location |
 | `08-analysis` | strokes-lost breakdown, HCP level per area, running score, drive dispersion from GPS, multi-round trend |
 | `10-practice` | practice app (`/practice/`, separate from Golf Live): round log → plan, range-log stats, club gaps, wedge matrix, practice plan from history, setup card, tempo trainer, swing camera with a fake device (record, tag tempo, draw, star, compare) |
+| `11-live-setup` | practice app live setup check: ball + feet found on synthetic top-down scenes (white shoe not mistaken for the ball), green/yellow/red, cm to move, stance width; live screen end-to-end with a fake camera video |
 
 `07-db-rules` needs Java and the Realtime Database emulator jar
 (`npx firebase-tools setup:emulators:database`); it is skipped when either is missing.
