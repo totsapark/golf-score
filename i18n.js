@@ -6,15 +6,6 @@ const EN = {
   'เกิดข้อผิดพลาด': 'Something went wrong', 'เชื่อมต่อไม่ได้': "Can't connect", 'ออนไลน์': 'Online', 'ออฟไลน์': 'Offline', 'กำลังส่ง': 'Sending', 'รอส่ง': 'pending',
   'โหมดทดสอบ': 'Test mode', 'เวอร์ชัน': 'Version', 'แอปออฟไลน์ตัวเดิม': 'Old offline app', 'ใช้แอปออฟไลน์ตัวเดิม': 'Use the old offline app',
   'บาท': 'THB', 'หลา': 'yd', 'เมตร': 'm', 'ม.': 'm', 'คน': 'players', 'ครั้ง': 'times', 'หลุม': 'holes', 'ชิ้น': 'items', 'รายการ': 'items',
-  // ---- ฝึกซ้อม ----
-  '🏋️ ฝึกซ้อม': '🏋️ Practice', '🏋️ ฝึกซ้อม & พัฒนาวงสวิง': '🏋️ Practice & swing', '🏋️ ไปซ้อม': '🏋️ Practice now', 'ฝึกซ้อม': 'Practice',
-  'แผนซ้อมของฉัน': 'My practice plan', 'ซ้อมไดรฟ์': 'Range session', 'ระยะแต่ละไม้': 'Club distances', 'จุดตั้งแต่ละไม้': 'Setup per club',
-  'กล้องวงสวิง': 'Swing camera', 'คลิปวงสวิงของฉัน': 'My swing clips', 'จังหวะสวิง': 'Swing tempo', '‹ กลับ': '‹ Back',
-  'เต็มหน้าไม้': 'Pure', 'พอใช้': 'OK', 'ตีดิน': 'Fat', 'ท็อป/บาง': 'Thin', 'หลุดแรง': 'Wild', 'ซ้าย': 'Left', 'ตรง': 'Straight', 'ขวา': 'Right',
-  'ใส่ระยะ': 'Enter distance', 'ลบลูกล่าสุด': 'Undo last ball', 'จบเซสชัน': 'End session', 'คะแนนคงที่': 'Consistency', 'ลูก': 'balls', 'ระยะ': 'Distance',
-  'ตั้งท่า': 'Address', 'ขึ้นสุด': 'Top', 'กระทบ': 'Impact', 'จบ': 'Finish', 'อัดวงสวิง': 'Record swing', 'นำเข้าคลิป': 'Import clip', 'เทียบกับวงอื่น': 'Compare with another swing',
-  'เริ่ม': 'Start', 'หยุด': 'Stop', 'ขึ้น...': 'Back...', 'ลง!': 'Down!', 'เตรียม...': 'Ready...', 'ถนัดขวา': 'Right-handed', 'ถนัดซ้าย': 'Left-handed',
-  'ตำแหน่งลูก': 'Ball position', 'ความกว้างการยืน': 'Stance width', 'น้ำหนัก': 'Weight', 'เท้าหลัง': 'Trail foot', 'เท้าหน้า': 'Lead foot', 'เป้า': 'Target',
   // ---- หน้าแรก ----
   '🏌️ สร้างแก๊งใหม่': '🏌️ Create a gang', '🔑 เข้าร่วมแก๊ง': '🔑 Join a gang', 'เข้าร่วมแก๊ง': 'Join a gang', '📷 สแกน QR': '📷 Scan QR', '📷 สแกน QR แก๊ง': '📷 Scan gang QR',
   'รหัสแก๊ง': 'Gang code', '🕘 แก๊งล่าสุดของฉัน': '🕘 My recent gangs', 'ลบรายการทั้งหมด': 'Clear list', '📚 ประวัติ & Handicap Index': '📚 History & Handicap Index',

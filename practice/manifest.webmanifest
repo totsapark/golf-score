@@ -1,0 +1,16 @@
+{
+  "name": "ซ้อมกอล์ฟ",
+  "short_name": "ซ้อมกอล์ฟ",
+  "description": "ใช้มือถือช่วยซ้อมกอล์ฟ: แผนซ้อม ซ้อมไดรฟ์ ระยะแต่ละไม้ จุดตั้ง กล้องวงสวิง จังหวะสวิง",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef3ee",
+  "theme_color": "#1b5e20",
+  "lang": "th",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

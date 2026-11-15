@@ -1,6 +1,29 @@
-// ฝึกซ้อม: ข้อมูล + คำนวณล้วน (ไม่แตะหน้าจอ) — สถิติไดรฟ์รายลูก, ช่องว่างระยะไม้, แผนซ้อมจากประวัติรอบ, ท่าตั้งแต่ละไม้
-import { dist } from './golf.js';
-import { levelOf, benchAt } from './analysis.js';
+// ซ้อมกอล์ฟ: ข้อมูล + คำนวณล้วน (ไม่แตะหน้าจอ) — สถิติซ้อมไดรฟ์รายลูก, ช่องว่างระยะไม้, แผนซ้อมจากรอบที่บันทึก, ท่าตั้งแต่ละไม้, จังหวะ
+
+// ค่าเฉลี่ยโดยประมาณของนักกอล์ฟสมัครเล่นแต่ละระดับ HCP (ต่อ 18 หลุม) ใช้เทียบ "ระดับ" ของแต่ละด้าน
+export const BENCH = {
+  hcp:   [0, 5, 10, 15, 20, 25, 30, 36],
+  gir:   [56, 45, 35, 26, 18, 12, 7, 4],          // % GIR
+  fir:   [57, 53, 49, 45, 41, 37, 33, 29],        // % ลงแฟร์เวย์ (Par 4-5)
+  putts: [30.5, 31.3, 32.2, 33.0, 33.9, 34.8, 35.7, 36.8],
+  three: [0.8, 1.2, 1.7, 2.2, 2.8, 3.4, 4.1, 5.0], // 3 พัตต์ขึ้นไป ต่อรอบ
+  pen:   [0.4, 0.8, 1.3, 1.9, 2.6, 3.4, 4.3, 5.4], // แต้มโทษ ต่อรอบ
+  scr:   [55, 43, 33, 25, 18, 13, 9, 6],          // % เซฟพาร์เมื่อไม่ GIR
+};
+// ค่าที่วัดได้ → ระดับ HCP โดยประมาณ (เทียบสัดส่วนระหว่างช่วง)
+export function levelOf(cat, v) {
+  const ys = BENCH[cat], xs = BENCH.hcp, up = ys[0] > ys[ys.length - 1];
+  const better = (a, b) => up ? a >= b : a <= b;
+  if (better(v, ys[0])) return 0;
+  if (!better(v, ys[ys.length - 1])) return 36;
+  for (let k = 1; k < ys.length; k++) if (better(v, ys[k])) { const t = (v - ys[k - 1]) / (ys[k] - ys[k - 1]); return Math.round(xs[k - 1] + t * (xs[k] - xs[k - 1])); }
+  return 36;
+}
+export function benchAt(cat, h) {
+  const xs = BENCH.hcp, ys = BENCH[cat]; h = Math.max(0, Math.min(36, h));
+  for (let k = 1; k < xs.length; k++) if (h <= xs[k]) { const t = (h - xs[k - 1]) / (xs[k] - xs[k - 1]); return ys[k - 1] + t * (ys[k] - ys[k - 1]); }
+  return ys[ys.length - 1];
+}
 
 export const YD = 1.09361;
 // ไม้ที่พกในถุง (ค่าเริ่มต้นแบบชุดทั่วไป) — ลำดับจากไกลไปใกล้
@@ -19,7 +42,7 @@ export const swingLabel = s => (SWINGS.find(x => x[0] === s) || SWINGS[0])[1];
 export const Q = { p: ['เต็มหน้าไม้', '#2e7d32'], o: ['พอใช้', '#9ccc65'], fat: ['ตีดิน', '#8d6e63'], thin: ['ท็อป/บาง', '#ffa000'], wild: ['หลุดแรง', '#c62828'] };
 export const MISS = ['fat', 'thin', 'wild'];
 
-const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+export const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const quant = (a, q) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), p = (s.length - 1) * q, lo = Math.floor(p), hi = Math.ceil(p); return s[lo] + (s[hi] - s[lo]) * (p - lo); };
 
 // สถิติของลูกกลุ่มหนึ่ง (ไม้เดียวกัน / วงสวิงเดียวกัน)
@@ -63,19 +86,7 @@ export function sessions(balls) {
   return Object.entries(by).map(([s, a]) => ({ s: +s, n: a.length, clubs: [...new Set(a.map(b => b.c))].sort((x, y) => clubIx(x) - clubIx(y)), st: groupStats(a) })).sort((a, b) => b.s - a.s);
 }
 
-// ระยะเฉลี่ยในสนามจริงจาก GPS (ประวัติรอบ ชื่อผู้เล่นเดียวกัน) — เมตร
-export function courseDistances(hist, name) {
-  const m = {};
-  (hist || []).forEach(r => { const p = r.rp?.players?.find(x => x.name?.trim() === name); if (!p) return;
-    Object.values(r.rp.shots?.[p.id] || {}).forEach(hs => {
-      const s = Object.values(hs || {}).filter(x => x.lat != null).sort((a, b) => a.t - b.t);
-      s.forEach((x, k) => { const nx = s[k + 1]; if (!nx || !x.club || x.club === 'Putter') return; const d = dist([x.lat, x.lng], [nx.lat, nx.lng]); if (d >= 3 && d < 350) (m[x.club] = m[x.club] || []).push(d); });
-    }); });
-  const o = {}; for (const c in m) o[c] = { n: m[c].length, d: median(m[c]) };
-  return o;
-}
-
-/* ---------------- แผนซ้อมจากประวัติรอบ ---------------- */
+/* ---------------- แผนซ้อมจากรอบที่บันทึก ---------------- */
 // ด้านที่วัดได้ → ประมาณสโตรกที่ลดได้ต่อรอบ ถ้าขยับขึ้นไปถึงระดับเป้าหมาย (ระดับ HCP)
 export const AREAS = {
   tee:   { icon: '🏌️', name: 'ทีช็อต & ลูกโทษ', short: 'ทีช็อต' },
@@ -86,21 +97,17 @@ export const AREAS = {
 // ตัวเลขตั้งต้นเมื่อยังไม่มีประวัติ: นักกอล์ฟสกอร์ 100-110 ทั่วไป (ต่อ 18 หลุม)
 const TYPICAL = { toPar: 34, putts: 36, gir: 6, pen: 4.5, three: 4, fir: 33, scr: 8 };
 
-export function playerNames(hist) {
-  const c = {}; (hist || []).forEach(r => r.players.forEach(p => { if (p.n) c[p.name.trim()] = (c[p.name.trim()] || 0) + 1; }));
-  return Object.keys(c).sort((a, b) => c[b] - c[a]);
-}
-// รวมตัวเลข 5 รอบล่าสุดของชื่อนี้ (ต่อ 18 หลุม)
-export function formOf(hist, name, last = 5) {
-  const rs = (hist || []).map(r => ({ r, p: r.players.find(x => x.name.trim() === name && x.n) })).filter(x => x.p).slice(-last);
+// รอบที่บันทึก: { date, course, n (หลุม), gross, par, putts, three, pen, fwN, fwHit, gir, scrN, scrO } — ช่องที่ไม่กรอก = null
+// รวมตัวเลข 5 รอบล่าสุด (ต่อ 18 หลุม) · ด้านที่ไม่มีข้อมูลเลยคืนค่า null
+export function formOf(rounds, last = 5) {
+  const rs = [...(rounds || [])].filter(r => r.n && r.gross).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).slice(-last);
   if (!rs.length) return null;
-  let n = 0, over = 0, putts = 0, g = 0, bn = 0, pen = 0, three = 0, fwN = 0, fwHit = 0, scrN = 0, scrO = 0;
-  rs.forEach(({ p }) => { n += p.n; over += p.gross - p.par; putts += p.putts; g += p.g;
-    if (p.bk) { bn += p.n; pen += p.bk.pen; three += p.bk.three; fwN += p.bk.fwN; fwHit += p.bk.fwHit; scrN += p.bk.scrN; scrO += p.bk.scrO; } });
-  const k = 18 / n, kb = bn ? 18 / bn : 0;
-  return { rounds: rs.length, holes: n, toPar: over * k, putts: putts * k, gir: g / n * 100,
-    pen: bn ? pen * kb : null, three: bn ? three * kb : null, fir: fwN >= 4 ? fwHit / fwN * 100 : null, scr: scrN >= 4 ? scrO / scrN * 100 : null,
-    avgGross: rs.reduce((s, { p }) => s + p.gross * 18 / p.n, 0) / rs.length };
+  const sum = (k, need) => { let v = 0, n = 0; rs.forEach(r => { if (r[k] != null && (!need || r[need] != null)) { v += r[k]; n += r.n; } }); return n ? v * 18 / n : null; };
+  let fwN = 0, fwHit = 0, scrN = 0, scrO = 0, gN = 0, g = 0;
+  rs.forEach(r => { if (r.fwN && r.fwHit != null) { fwN += r.fwN; fwHit += r.fwHit; } if (r.scrN && r.scrO != null) { scrN += r.scrN; scrO += r.scrO; } if (r.gir != null) { gN += r.n; g += r.gir; } });
+  return { rounds: rs.length, toPar: sum('gross') - sum('par'), putts: sum('putts'), gir: gN ? g / gN * 100 : null,
+    pen: sum('pen'), three: sum('three'), fir: fwN >= 4 ? fwHit / fwN * 100 : null, scr: scrN >= 4 ? scrO / scrN * 100 : null,
+    avgGross: rs.reduce((s, r) => s + r.gross * 18 / r.n, 0) / rs.length };
 }
 // ระดับ HCP โดยประมาณจากสกอร์เทียบ Par (ต่อ 18 หลุม) และเป้าหมายขั้นต่อไป
 export const hcpFromToPar = t => Math.max(0, Math.min(54, Math.round(t * 0.88)));
@@ -117,8 +124,8 @@ export function planFrom(form) {
   const areas = Object.entries(parts).map(([k, ps]) => ({ k, ...AREAS[k], gain: ps.reduce((s, [, g]) => s + g, 0), stats: ps.map(([m]) => m),
     lvl: Math.max(...ps.map(([m]) => levelOf(m, v(m)))) })).sort((a, b) => b.gain - a.gain);
   // ไม่มีข้อมูลลูกโทษ/สแครมเบิล (รอบเก่า) → ใช้ค่าทั่วไปแต่บอกว่าเป็นค่าประมาณ
-  const guessed = est ? Object.keys(TYPICAL) : ['pen', 'fir', 'scr'].filter(k => f[k] == null);
-  return { est, guessed, cur, target: T, areas, total: areas.reduce((s, a) => s + a.gain, 0), f };
+  const guessed = est ? Object.keys(TYPICAL) : ['putts', 'gir', 'pen', 'fir', 'scr'].filter(k => f[k] == null);
+  return { est, guessed, cur, target: T, areas, total: areas.reduce((s, a) => s + a.gain, 0), f, vals: Object.fromEntries(Object.keys(TYPICAL).map(k => [k, v(k)])) };
 }
 // แบ่งเวลาซ้อมตามลำดับความสำคัญ (นาที) · วอร์มอัพ + จังหวะ 10% เสมอ
 export function sessionPlan(plan, minutes = 60) {

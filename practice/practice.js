@@ -1,8 +1,8 @@
-// ฝึกซ้อม: แผนซ้อม · ซ้อมไดรฟ์ (จดผลรายลูก) · ระยะแต่ละไม้ · จุดตั้งแต่ละไม้ · กล้องวงสวิง · จังหวะสวิง
+// หน้าจอซ้อมกอล์ฟ: แผนซ้อม · บันทึกรอบ · ซ้อมไดรฟ์ (จดผลรายลูก) · ระยะแต่ละไม้ · จุดตั้งแต่ละไม้ · กล้องวงสวิง · จังหวะสวิง
 // ข้อมูลทั้งหมดอยู่ในเครื่องนี้ (localStorage + IndexedDB สำหรับคลิป) ไม่ส่งขึ้นเซิร์ฟเวอร์
-import * as P from './practice-core.js';
+import * as P from './core.js';
 
-const LS = 'golf2_prac', DAY = 864e5, FRAME = 1 / 30;
+const LS = 'golfpractice', DAY = 864e5, FRAME = 1 / 30;
 const load = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch (e) { return {}; } };
 const fmtD = t => { const d = new Date(t); return d.getDate() + '/' + (d.getMonth() + 1) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 const sec = v => v == null ? '–' : v.toFixed(2);
@@ -11,7 +11,7 @@ const sec = v => v == null ? '–' : v.toFixed(2);
 const rq = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 const done = t => new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = t.onabort = () => rej(t.error); });
 let dbp = null;
-const db = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('golflive-swings', 1);
+const db = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('golfpractice-swings', 1);
   r.onupgradeneeded = () => { r.result.createObjectStore('meta', { keyPath: 'id' }); r.result.createObjectStore('blobs'); };
   r.onsuccess = () => res(r.result); r.onerror = () => { dbp = null; rej(r.error); }; }));
 export const SW = {
@@ -45,10 +45,10 @@ async function findImpact(buf) {
 
 export function createPractice(root, ctx) {
   const { esc, toast, ask, dlg } = ctx;
-  let D = { bag: P.DEF_BAG, balls: [], setup: {}, done: {}, hand: 'R', useDist: true, tempo: { mode: 'full', k: 1, gap: 5 }, ...load() };
+  let D = { bag: P.DEF_BAG, balls: [], rounds: [], setup: {}, done: {}, hand: 'R', useDist: true, unit: 'y', tempo: { mode: 'full', k: 1, gap: 5 }, ...load() };
   const save = () => { try { localStorage.setItem(LS, JSON.stringify(D)); } catch (e) { toast('พื้นที่เก็บข้อมูลในเครื่องเต็ม'); } };
   const V = { page: 'menu', club: null, sw: 'full', dist: {}, setupK: 'MI', mins: 60, swId: null, cmpId: null, swFilter: '', trendK: null, tool: 'view', speed: 1, cam: { cd: 5, len: 5, auto: false, grid: true, view: 'face', facing: 'environment' } };
-  const yd = () => ctx.unit() === 'y', U = () => yd() ? P.YD : 1, un = () => yd() ? 'หลา' : 'ม.';
+  const yd = () => D.unit !== 'm', U = () => yd() ? P.YD : 1, un = () => yd() ? 'หลา' : 'ม.';
   const toU = m => m == null ? null : Math.round(m * U()), fromU = v => v / U();
   let live = {};   // ของที่ต้องเก็บกวาดตอนออกจากหน้า: stream, recorder, timers, rAF, object URLs, wake lock
   async function wake(on) {
@@ -64,21 +64,20 @@ export function createPractice(root, ctx) {
   const later = (fn, ms) => { const t = setTimeout(fn, ms); (live.timers = live.timers || []).push(t); return t; };
   const url = b => { const u = URL.createObjectURL(b); (live.urls = live.urls || []).push(u); return u; };
   function go(page, o) { Object.assign(V, o || {}); V.page = page; render(); scrollTo(0, 0); }
-  const PARENT = { plan: 'menu', range: 'menu', bag: 'menu', setup: 'menu', cam: 'menu', swings: 'menu', tempo: 'menu', swing: 'swings', cmp: 'swing' };
+  const PARENT = { rounds: 'menu', rform: 'rounds', plan: 'menu', range: 'menu', bag: 'menu', setup: 'menu', cam: 'menu', swings: 'menu', tempo: 'menu', swing: 'swings', cmp: 'swing' };
   function back() { if (V.page === 'menu') return false; go(PARENT[V.page] || 'menu'); return true; }
 
   /* ---------- หน้าเมนู ---------- */
-  const names = () => P.playerNames(ctx.hist());
-  const me = () => { const n = names(); return n.includes(D.name) ? D.name : n[0] || null; };
   function curSession() { const c = D.cur; if (c && Date.now() - c.last < 3 * 3600e3) return c.s; return null; }
   function rMenu() {
-    const nm = me(), f = nm ? P.formOf(ctx.hist(), nm) : null, plan = P.planFrom(f), today = D.balls.filter(b => b.t > Date.now() - DAY).length;
+    const f = P.formOf(D.rounds), plan = P.planFrom(f), today = D.balls.filter(b => b.t > Date.now() - DAY).length;
     const bt = P.bagTable(D.balls, D.bag).filter(r => r.s.carry != null).length;
     const tile = (pg, ic, t, sub) => `<button class="ptile" data-pa="go" data-v="${pg}"><span>${ic}</span><b>${t}</b><small>${sub}</small></button>`;
     return `<div class="card center"><div style="font-size:44px">🏋️</div><h2 style="font-size:20px;margin-bottom:4px">ฝึกซ้อม</h2>
       <p class="muted" style="margin:0">ใช้มือถือช่วยสร้างวงสวิงที่คงที่ หาระยะและจุดตั้งที่พอดีของแต่ละไม้</p></div>
       <div class="ptiles">
         ${tile('plan', '📋', 'แผนซ้อมของฉัน', `<span>ฝึกก่อน</span>: ${plan.areas[0].short}`)}
+        ${tile('rounds', '📝', 'บันทึกรอบ', D.rounds.length ? `${D.rounds.length} <span>รอบ</span>` : 'ให้แผนซ้อมตรงกับฟอร์มจริง')}
         ${tile('range', '🎯', 'ซ้อมไดรฟ์', today ? `<span>วันนี้</span> ${today} <span>ลูก</span>` : 'จดผลทีละลูก')}
         ${tile('bag', '📏', 'ระยะแต่ละไม้', bt ? `${bt} <span>ไม้มีระยะแล้ว</span>` : 'ยังไม่มีข้อมูล')}
         ${tile('setup', '🧍', 'จุดตั้งแต่ละไม้', 'ตำแหน่งลูก · ยืน · น้ำหนัก')}
@@ -91,14 +90,63 @@ export function createPractice(root, ctx) {
         <li><b>ซ้อมไดรฟ์</b> · <span>ไม้ละ 5-10 ลูก จดผลทุกลูก → ได้ระยะจริงและรู้ว่าพลาดแบบไหน</span></li>
         <li><b>กล้องวงสวิง</b> · <span>อัด 7i หลายวง ติดดาว ⭐ วงที่ดีที่สุดเป็นต้นแบบ</span></li>
         <li><b>จังหวะสวิง</b> · <span>ตีตามเสียงให้จังหวะเดิมทุกไม้</span></li>
-        <li><b>แผนซ้อมของฉัน</b> · <span>ซ้อมตามลำดับที่ลดสโตรกได้มากสุด สัปดาห์ละ 2 ครั้ง</span></li></ol></div>
-      <button class="btn sec full" data-act="home">🏠 กลับหน้าแรก</button>`;
+        <li><b>บันทึกรอบ</b> · <span>จบรอบแล้วกรอกสกอร์ พัตต์ ลูกโทษ แฟร์เวย์</span> → <b>แผนซ้อมของฉัน</b> <span>บอกว่าควรซ้อมอะไรก่อน สัปดาห์ละ 2 ครั้ง</span></li></ol></div>
+      <div class="card"><h2>⚙️ ตั้งค่า</h2><label class="lb" style="margin-top:0">หน่วยระยะ</label><div class="seg"><button data-pa="unit" data-v="y" class="${yd() ? 'on' : ''}">หลา</button><button data-pa="unit" data-v="m" class="${!yd() ? 'on' : ''}">เมตร</button></div></div>
+      <p class="muted center" style="margin-top:16px">${ctx.ver ? 'เวอร์ชัน ' + ctx.ver : ''} · ข้อมูลทั้งหมดอยู่ในมือถือเครื่องนี้</p>`;
   }
   async function mountMenu() { try { const n = (await SW.list()).length; const el = root.querySelector('#swcount'); if (el && n) el.textContent = n + ' ' + ctx.tr('คลิป'); } catch (e) {} }
 
+  /* ---------- บันทึกรอบ (ใช้ทำแผนซ้อม) ---------- */
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const glHist = () => { try { return JSON.parse(localStorage.getItem('golf2_hist')) || []; } catch (e) { return []; } };
+  function rRounds() {
+    const rs = [...D.rounds].sort((a, b) => a.date < b.date ? 1 : -1), gl = glHist().length;
+    const cell = (v, suf = '') => v == null ? '<span class="muted">–</span>' : v + suf;
+    return `<div class="card"><h2>📝 รอบที่บันทึก</h2>
+      ${rs.length ? `<div class="scroll"><table><tr><th class="l">วันที่</th><th>สกอร์</th><th>พัตต์</th><th>โทษ</th><th>FW</th><th>GIR</th><th></th></tr>
+        ${rs.map(r => `<tr><td class="l"><b>${esc(r.date.slice(5).split('-').reverse().join('/'))}</b><br><span class="muted">${esc(r.course || '')}${r.n === 9 ? ' · 9 หลุม' : ''}</span></td><td><b>${r.gross}</b><small style="color:#889">${r.gross - r.par > 0 ? '+' : ''}${r.gross - r.par}</small></td>
+          <td>${cell(r.putts)}</td><td>${cell(r.pen)}</td><td>${r.fwHit != null && r.fwN ? r.fwHit + '/' + r.fwN : cell(null)}</td><td>${cell(r.gir)}</td><td><button class="x" data-pa="rdel" data-v="${r.id}">🗑</button></td></tr>`).join('')}</table></div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">แผนซ้อมใช้ 5 รอบล่าสุด</p>` : '<p class="muted">ยังไม่มีรอบ · จบรอบแล้วกรอกตัวเลขจากสกอร์การ์ด ใช้เวลาไม่ถึงนาที</p>'}
+      <button class="btn full" data-pa="go" data-v="rform">＋ บันทึกรอบใหม่</button>
+      ${gl ? '<button class="btn sec full" data-pa="rimport">📥 นำเข้าจาก Golf Live (มือถือเครื่องนี้)</button>' : ''}</div>
+    <button class="btn sec full" data-pa="go" data-v="plan">📋 ดูแผนซ้อม</button><button class="btn sec full" data-pa="go" data-v="menu">‹ กลับ</button>`;
+  }
+  const RF = [['gross', 'สกอร์รวม', 'จำเป็น'], ['par', 'Par สนาม', ''], ['putts', 'พัตต์รวม', ''], ['three', 'หลุมที่ 3 พัตต์ขึ้นไป', ''], ['pen', 'แต้มโทษ (OB/น้ำ/ลูกหาย)', ''],
+    ['fwHit', 'ทีช็อตลงแฟร์เวย์ (หลุม Par 4-5)', ''], ['fwN', 'จากหลุม Par 4-5 ทั้งหมด', ''], ['gir', 'ออนกรีนตาม regulation (GIR)', ''], ['scrO', 'ไม่ GIR แต่ยังได้พาร์', '']];
+  function rRform() {
+    const n = V.rfHoles || 18, F = V.rf || {}, dv = { par: n === 9 ? 36 : 72, fwN: n === 9 ? 7 : 14 };
+    return `<div class="card"><h2>📝 บันทึกรอบ</h2>
+      <div class="grid2"><div><label class="lb" style="margin-top:0">วันที่</label><input type="date" id="rf_date" value="${esc(F.date || today())}"></div><div><label class="lb" style="margin-top:0">สนาม</label><input id="rf_course" value="${esc(F.course || '')}" placeholder="ไม่ใส่ก็ได้"></div></div>
+      <label class="lb">จำนวนหลุม</label><div class="seg"><button data-pa="rholes" data-v="18" class="${n === 18 ? 'on' : ''}">18 หลุม</button><button data-pa="rholes" data-v="9" class="${n === 9 ? 'on' : ''}">9 หลุม</button></div>
+      <div class="rform">${RF.map(([k, l, req]) => `<label><span>${l}${req ? ' <b style="color:#c62828">*</b>' : ''}</span><input type="number" inputmode="numeric" id="rf_${k}" value="${F[k] ?? dv[k] ?? ''}" placeholder="–"></label>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">ไม่รู้ช่องไหนเว้นว่างได้ · ยิ่งกรอกครบ แผนซ้อมยิ่งแม่น · GIR = ลูกถึงกรีนภายใน Par−2 ครั้ง</p>
+      <button class="btn full big-btn" data-pa="rsave">💾 บันทึก</button></div>
+    <button class="btn sec full" data-pa="go" data-v="rounds">‹ กลับ</button>`;
+  }
+  function saveForm() { const F = {}; ['date', 'course', ...RF.map(x => x[0])].forEach(k => { const el = root.querySelector('#rf_' + k); if (el) F[k] = el.value; }); V.rf = F; return F; }
+  function saveRound() {
+    const F = saveForm(), n = V.rfHoles || 18, num = k => F[k] === '' || F[k] == null || isNaN(+F[k]) ? null : Math.round(+F[k]);
+    const r = { id: 'r' + Date.now().toString(36), date: F.date || today(), course: (F.course || '').trim(), n, gross: num('gross'), par: num('par') || (n === 9 ? 36 : 72), putts: num('putts'), three: num('three'), pen: num('pen'), fwHit: num('fwHit'), fwN: num('fwN'), gir: num('gir'), scrO: num('scrO') };
+    if (!r.gross || r.gross < n) return toast('ใส่สกอร์รวมก่อน');
+    if (r.gir != null) { r.gir = Math.min(r.gir, n); r.scrN = n - r.gir; if (r.scrO != null) r.scrO = Math.min(r.scrO, r.scrN); }
+    if (r.fwHit != null && r.fwN != null) r.fwHit = Math.min(r.fwHit, r.fwN);
+    D.rounds.push(r); save(); V.rf = null; toast('บันทึกรอบแล้ว ✓'); go('plan');
+  }
+  // อ่านประวัติของแอป Golf Live บนมือถือเครื่องเดียวกัน (อ่านอย่างเดียว คัดลอกมาเป็นรอบของแอปนี้)
+  function importGolfLive() {
+    const H = glHist(), c = {}; H.forEach(r => (r.players || []).forEach(p => { if (p.n) c[p.name.trim()] = (c[p.name.trim()] || 0) + 1; }));
+    const ns = Object.keys(c).sort((a, b) => c[b] - c[a]); if (!ns.length) return toast('ไม่พบรอบใน Golf Live');
+    const doIt = name => { let k = 0; H.forEach(h => { const p = (h.players || []).find(x => x.name.trim() === name && x.n); const id = 'gl_' + h.rid; if (!p || D.rounds.some(r => r.id === id)) return;
+      const b = p.bk || {}; D.rounds.push({ id, date: h.date, course: h.course || '', n: p.n, gross: p.gross, par: p.par, putts: p.putts, gir: p.g, scrN: b.scrN ?? null, scrO: b.scrO ?? null, three: b.three ?? null, pen: b.pen ?? null, fwN: b.fwN ?? null, fwHit: b.fwHit ?? null }); k++; });
+      save(); toast(`นำเข้า ${k} รอบ`); render(); };
+    if (ns.length === 1) return doIt(ns[0]);
+    dlg(`<p><b>เลือกชื่อของคุณใน Golf Live</b></p>${ns.map(n => `<button class="btn sec full" data-n="${esc(n)}">${esc(n)} · ${c[n]} รอบ</button>`).join('')}<button class="btn red full" data-n="">ยกเลิก</button>`,
+      el => el.addEventListener('click', e => { const b = e.target.closest('[data-n]'); if (!b) return; el.remove(); if (b.dataset.n) doIt(b.dataset.n); }));
+  }
+
   /* ---------- แผนซ้อม ---------- */
   function rPlan() {
-    const ns = names(), nm = me(), f = nm ? P.formOf(ctx.hist(), nm) : null, plan = P.planFrom(f), sp = P.sessionPlan(plan, V.mins);
+    const f = P.formOf(D.rounds), plan = P.planFrom(f), pv = plan.vals, sp = P.sessionPlan(plan, V.mins);
     const max = Math.max(...plan.areas.map(a => a.gain), 0.1), wk = Date.now() - 7 * DAY;
     const cnt = id => (D.done[id] || []).filter(t => t > wk).length;
     const dr = d => `<button class="drl" data-pa="drill" data-v="${d.id}"><span>${d.t}</span><small>${d.goal}</small>${cnt(d.id) ? `<i>✓${cnt(d.id)}</i>` : ''}</button>`;
@@ -106,12 +154,12 @@ export function createPractice(root, ctx) {
     const g = k => plan.guessed.includes(k);
     const tgtScore = Math.round(72 + plan.target / 0.88);
     return `<div class="card"><h2>📋 ฟอร์มของคุณ</h2>
-      ${ns.length > 1 ? `<div class="chips" style="padding:0 0 8px">${ns.map(n => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${n === nm ? 'cur' : ''}" data-pa="name" data-v="${esc(n)}" data-notr>${esc(n)}</button>`).join('')}</div>` : ''}
-      ${f ? `<div class="muted" style="font-size:12px;margin-bottom:6px"><span>จาก</span> ${f.rounds} <span>รอบล่าสุดในประวัติ</span> (${esc(nm)})</div>`
-        : `<div class="note">ยังไม่มีรอบในประวัติ · ใช้ค่าเฉลี่ยของนักกอล์ฟสกอร์ 100-110 ไปก่อน · จบรอบแล้วกด "บันทึกรอบนี้ลงประวัติ" แผนจะปรับตามฟอร์มจริงของคุณ</div>`}
-      <div class="fgrid">${fv('สกอร์เฉลี่ย', f ? Math.round(f.avgGross) : '~105', !f)}${fv('พัตต์/รอบ', plan.f.putts.toFixed(1), g('putts'))}${fv('GIR', Math.round(plan.f.gir) + '%', g('gir'))}
-        ${fv('ลูกโทษ/รอบ', (plan.f.pen ?? 4.5).toFixed(1), g('pen'))}${fv('ทีช็อตลงแฟร์เวย์', Math.round(plan.f.fir ?? 33) + '%', g('fir'))}${fv('เซฟเมื่อไม่ GIR', Math.round(plan.f.scr ?? 8) + '%', g('scr'))}</div>
-      ${plan.guessed.length && f ? '<p class="muted" style="font-size:11px;margin:4px 0 0">* ยังไม่มีข้อมูล ใช้ค่าทั่วไป (รอบที่บันทึกด้วยเวอร์ชันนี้จะมีครบ)</p>' : ''}</div>
+      ${f ? `<div class="muted" style="font-size:12px;margin-bottom:6px"><span>จาก</span> ${f.rounds} <span>รอบล่าสุดที่บันทึก</span></div>`
+        : `<div class="note">ยังไม่มีรอบที่บันทึก · ใช้ค่าเฉลี่ยของนักกอล์ฟสกอร์ 100-110 ไปก่อน · บันทึกรอบแล้วแผนจะปรับตามฟอร์มจริงของคุณ</div>`}
+      <div class="fgrid">${fv('สกอร์เฉลี่ย', f ? Math.round(f.avgGross) : '~105', !f)}${fv('พัตต์/รอบ', pv.putts.toFixed(1), g('putts'))}${fv('GIR', Math.round(pv.gir) + '%', g('gir'))}
+        ${fv('ลูกโทษ/รอบ', pv.pen.toFixed(1), g('pen'))}${fv('ทีช็อตลงแฟร์เวย์', Math.round(pv.fir) + '%', g('fir'))}${fv('เซฟเมื่อไม่ GIR', Math.round(pv.scr) + '%', g('scr'))}</div>
+      ${plan.guessed.length && f ? '<p class="muted" style="font-size:11px;margin:4px 0 0">* ยังไม่มีข้อมูลด้านนี้ ใช้ค่าทั่วไป · กรอกให้ครบตอนบันทึกรอบ</p>' : ''}
+      <button class="btn sec full" data-pa="go" data-v="${f ? 'rounds' : 'rform'}">📝 ${f ? 'รอบที่บันทึก' : 'บันทึกรอบแรก'}</button></div>
     <div class="card"><h2>🎯 ลดสโตรกตรงไหนได้มากสุด</h2>
       <p style="margin:0 0 8px"><span>เป้าหมายขั้นต่อไป: สกอร์ประมาณ</span> <b class="big">${tgtScore}</b> <span class="muted">(<span>ระดับ HCP</span> ${plan.target})</span><br>
       <span class="muted">ถ้าแต่ละด้านขยับถึงระดับนั้น จะลดได้ราว</span> <b>${plan.total.toFixed(1)}</b> <span class="muted">สโตรก/รอบ</span></p>
@@ -209,16 +257,16 @@ export function createPractice(root, ctx) {
     return `<svg viewBox="0 0 ${W} ${H}" class="chart"><path d="${v.map((q, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(q).toFixed(1)}`).join('')}" fill="none" stroke="#2e7d32" stroke-width="2.5"/>${v.map((q, i) => `<circle cx="${X(i)}" cy="${Y(q)}" r="3.5" fill="#2e7d32"/><text x="${X(i)}" y="${Y(q) - 6}" font-size="10" text-anchor="middle" fill="#556">${fmt(q)}</text>`).join('')}</svg>`;
   }
   function rBag() {
-    const rows = P.bagTable(D.balls, D.bag), wm = P.wedgeMatrix(D.balls, D.bag), nm = me(), cd = nm ? P.courseDistances(ctx.hist(), nm) : {}, hasC = Object.keys(cd).length;
+    const rows = P.bagTable(D.balls, D.bag), wm = P.wedgeMatrix(D.balls, D.bag);
     const keys = [...new Set(D.balls.map(P.keyOf))].sort((a, b) => P.clubIx(a.split('|')[0]) - P.clubIx(b.split('|')[0]));
     const tk = keys.includes(V.trendK) ? V.trendK : keys.find(k => k === '7i') || keys[0], tr = tk ? P.clubTrend(D.balls, tk) : [], ss = P.sessions(D.balls);
     const warn = rows.filter(r => r.warn);
     return `<div class="card"><h2>📏 ระยะแต่ละไม้ (วงเต็ม)</h2>
-      ${rows.some(r => r.s.n) ? `<div class="scroll"><table><tr><th class="l">ไม้</th><th>ระยะ</th><th>ช่วง 50%</th><th>คงที่</th><th>ตรง</th>${hasC ? '<th>ในสนาม</th>' : ''}<th>ลูก</th></tr>
+      ${rows.some(r => r.s.n) ? `<div class="scroll"><table><tr><th class="l">ไม้</th><th>ระยะ</th><th>ช่วง 50%</th><th>คงที่</th><th>ตรง</th><th>ลูก</th></tr>
         ${rows.map(r => `<tr><td class="l"><b data-notr>${r.c}</b></td><td><b>${r.s.carry != null ? toU(r.s.carry) : '–'}</b>${r.gap != null ? `<small style="color:${r.warn ? '#c62828' : '#889'}">−${toU(r.gap)}</small>` : ''}</td>
           <td class="muted">${r.s.nd >= 3 ? toU(r.s.lo) + '–' + toU(r.s.hi) : '–'}</td><td>${r.s.score != null ? `<span class="lvl ${r.s.score >= 70 ? 'good' : r.s.score < 45 ? 'bad' : ''}">${r.s.score}%</span>` : '–'}</td>
-          <td>${r.s.straight != null ? r.s.straight + '%' : '–'}</td>${hasC ? `<td class="muted">${cd[r.c] ? toU(cd[r.c].d) : '–'}</td>` : ''}<td class="muted">${r.s.n || ''}</td></tr>`).join('')}</table></div>
-        <p class="muted" style="font-size:11px;margin:6px 0 0"><span>หน่วย</span>: ${un()} · <span>ระยะ = มัธยฐานของลูกเต็มหน้าไม้ · ตัวเลขเล็ก = ห่างจากไม้ก่อนหน้า</span>${hasC ? ' · <span>ในสนาม = จาก GPS ตอนบันทึกช็อต (รวมลูกกลิ้ง)</span>' : ''}</p>
+          <td>${r.s.straight != null ? r.s.straight + '%' : '–'}</td><td class="muted">${r.s.n || ''}</td></tr>`).join('')}</table></div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0"><span>หน่วย</span>: ${un()} · <span>ระยะ = มัธยฐานของลูกเต็มหน้าไม้ · ตัวเลขเล็ก = ห่างจากไม้ก่อนหน้า</span></p>
         ${warn.map(r => `<div class="cn"><span>${r.warn === 'close' ? '⚠️' : '↕️'}</span><div><b data-notr>${r.c}</b> ${r.warn === 'close' ? `<span>ระยะใกล้กับไม้ก่อนหน้ามาก (ห่าง</span> ${toU(r.gap)} ${un()}) <span>· ไม้ใดไม้หนึ่งอาจไม่จำเป็น หรือยังตีไม้ยาวไม่เต็ม</span>` : `<span>ห่างจากไม้ก่อนหน้า</span> ${toU(r.gap)} ${un()} <span>· มีช่องว่างระยะ ลองเพิ่มไม้หรือฝึกวง ¾ ของไม้ที่ยาวกว่า</span>`}</div></div>`).join('')}`
         : '<p class="muted">ยังไม่มีข้อมูล · ไปที่ "ซ้อมไดรฟ์" ตีไม้ละ 5-10 ลูกพร้อมใส่ระยะ</p>'}
       <button class="btn sec full" data-pa="editbag">✏️ แก้ไม้ในถุง</button></div>
@@ -519,7 +567,7 @@ export function createPractice(root, ctx) {
   function setTempoUi(on) { const b = root.querySelector('#tgo'); if (b) { b.textContent = ctx.tr(on ? '⏹ หยุด' : '▶️ เริ่ม'); b.classList.toggle('red', on); } }
 
   /* ---------- render + events ---------- */
-  const PAGES = { menu: [rMenu, mountMenu], plan: [rPlan], range: [rRange], bag: [rBag], setup: [rSetup], cam: [rCam, mountCam], swings: [rSwings, mountSwings], swing: [rSwing, mountSwing], cmp: [rCmp, mountCmp], tempo: [rTempo, mountTempo] };
+  const PAGES = { menu: [rMenu, mountMenu], rounds: [rRounds], rform: [rRform], plan: [rPlan], range: [rRange], bag: [rBag], setup: [rSetup], cam: [rCam, mountCam], swings: [rSwings, mountSwings], swing: [rSwing, mountSwing], cmp: [rCmp, mountCmp], tempo: [rTempo, mountTempo] };
   function render() { stopAll(); const [r, m] = PAGES[V.page] || PAGES.menu; root.innerHTML = r(); if (m) m(); }
 
   async function onClick(e) {
@@ -527,7 +575,11 @@ export function createPractice(root, ctx) {
     const a = t.dataset.pa, v = t.dataset.v;
     switch (a) {
       case 'go': go(v); return;
-      case 'name': D.name = v; save(); render(); return;
+      case 'unit': D.unit = v; save(); V.dist = {}; render(); return;
+      case 'rholes': V.rfHoles = +v; { const F = saveForm(); delete F.par; delete F.fwN; } render(); return;
+      case 'rsave': saveRound(); return;
+      case 'rdel': if (await ask('ลบรอบนี้?')) { D.rounds = D.rounds.filter(r => r.id !== v); save(); render(); } return;
+      case 'rimport': importGolfLive(); return;
       case 'drill': drillDlg(v); return;
       case 'mins': V.mins = +v; render(); return;
       case 'club': V.club = v; render(); return;
