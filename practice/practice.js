@@ -46,7 +46,7 @@ async function findImpact(buf) {
 
 export function createPractice(root, ctx) {
   const { esc, toast, ask, dlg } = ctx;
-  let D = { shoulder: 40, bag: P.DEF_BAG, balls: [], rounds: [], setup: {}, done: {}, hand: 'R', useDist: true, unit: 'y', tempo: { mode: 'full', k: 1, gap: 5 }, ...load() };
+  let D = { height: 170, bag: P.DEF_BAG, balls: [], rounds: [], setup: {}, done: {}, hand: 'R', useDist: true, unit: 'y', tempo: { mode: 'full', k: 1, gap: 5 }, ...load() };
   const save = () => { try { localStorage.setItem(LS, JSON.stringify(D)); } catch (e) { toast('พื้นที่เก็บข้อมูลในเครื่องเต็ม'); } };
   const V = { page: 'menu', club: null, sw: 'full', dist: {}, setupK: 'MI', mins: 60, swId: null, cmpId: null, swFilter: '', trendK: null, tool: 'view', speed: 1, cam: { cd: 5, len: 5, auto: false, grid: true, view: 'face', facing: 'environment' } };
   const yd = () => D.unit !== 'm', U = () => yd() ? P.YD : 1, un = () => yd() ? 'หลา' : 'ม.';
@@ -570,7 +570,8 @@ export function createPractice(root, ctx) {
 
   /* ---------- เช็คท่าตั้งสดด้วยกล้องหลัง ---------- */
   const lvTargetLeft = () => (D.hand !== 'L') !== !!D.liveFlip;   // ถนัดขวา + หัวมือถือชี้ไปข้างหน้า → เป้าอยู่ซ้ายจอ
-  const shoulder = () => +D.shoulder || 40;
+  const height = () => +D.height || 170;
+  const shoulder = () => D.shoulderManual && +D.shoulder ? +D.shoulder : Vi.shoulderFromHeight(height());
   const bpWord = bp => bp < 45 ? 'ค่อนเท้าหลัง' : bp <= 55 ? 'กลางเท้า' : bp >= 88 ? 'ส้นเท้าหน้า' : 'ค่อนเท้าหน้า';
   function rLive() {
     const k = V.setupK, { m } = setupOf(k);
@@ -579,12 +580,13 @@ export function createPractice(root, ctx) {
       <div class="card"><div class="chips" style="padding:0 0 6px">${P.SETUPS.filter(s => s.k !== 'PUTT').map(s => `<button style="width:auto;padding:0 11px;border-radius:16px" class="${s.k === k ? 'cur' : ''}" data-pa="lsetk" data-v="${s.k}">${s.t}</button>`).join('')}</div>
         <label class="lb" style="margin-top:2px"><span>ตำแหน่งลูกที่ต้องการ</span> · <b id="lbpv">${bpWord(m.bp)}</b></label><input class="rng" type="range" min="0" max="100" value="${m.bp}" data-pi="bp">
         <label class="lb"><span>ความกว้างการยืน</span> · <b id="lwv">${Math.round(m.w * 100)}%</b> <span>ของไหล่</span> = <b id="lwcm">${Math.round(m.w * shoulder())}</b> <span>ซม.</span></label><input class="rng" type="range" min="25" max="130" value="${Math.round(m.w * 100)}" data-pi="w">
-        <div class="trow"><span><b>ความกว้างไหล่ของคุณ</b><br><span class="muted">วัดจากปลายไหล่ซ้ายถึงขวา (ซม.)</span></span><input type="number" inputmode="numeric" data-pi="shoulder" value="${shoulder()}" style="width:84px;text-align:center;font-weight:700"></div>
+        <div class="trow"><span><b>ส่วนสูงของคุณ (ซม.)</b><br><span class="muted">ใช้ประมาณความกว้างไหล่และระดับถือมือถือ</span></span><input type="number" inputmode="numeric" data-pi="height" value="${height()}" style="width:84px;text-align:center;font-weight:700"></div>
+        <div class="trow"><span><b>ความกว้างไหล่</b><br><span class="muted" id="lshn">${D.shoulderManual ? 'ใส่เอง' : 'ประมาณจากส่วนสูง · แก้เองได้'}</span></span><span style="display:flex;gap:6px;align-items:center">${D.shoulderManual ? '<button class="btn sec" style="padding:6px 9px" data-pa="lshauto" title="คำนวณจากส่วนสูง">↺</button>' : ''}<input type="number" inputmode="numeric" data-pi="shoulder" value="${shoulder()}" style="width:84px;text-align:center;font-weight:700"></span></div>
         <div class="trow"><span><b>เสียงเมื่อพอดี</b></span><button class="sw ${D.liveBeep !== false ? 'on' : ''}" data-pa="lbeep"></button></div>
         <div class="trow"><span><b>เป้าอยู่ฝั่งไหนของจอ</b><br><span class="muted">ดูลูกศร "เป้า" บนภาพให้ชี้ไปทางเป้าจริง</span></span><button class="btn sec" style="padding:8px 12px" data-pa="lside">${lvTargetLeft() ? '← ซ้าย' : 'ขวา →'}</button></div>
         <div class="trow"><span><b>ดูสิ่งที่กล้องเห็น</b><br><span class="muted">สีแดง = ส่วนที่แอปคิดว่าไม่ใช่พื้น</span></span><button class="sw ${V.ldbg ? 'on' : ''}" data-pa="ldbg"></button></div></div>
       <div class="card"><h2>📱 ถือมือถือยังไง</h2><ul class="plist">
-        <li><span>ยืนท่าตั้งตามปกติ ถือมือถือแนวตั้งระดับอก</span> <b>ส่องกล้องหลังลงพื้น</b> <span>ให้หัวมือถือชี้ไปทางลูก</span></li>
+        <li><span>ยืนท่าตั้งตามปกติ ถือมือถือแนวตั้งระดับอก</span> (<span>สูงจากพื้นประมาณ</span> <b id="lchest">${Vi.chestFromHeight(height())}</b> <span>ซม.</span>) <b>ส่องกล้องหลังลงพื้น</b> <span>ให้หัวมือถือชี้ไปทางลูก</span></li>
         <li><span>ให้เห็น</span> <b>ลูก + ปลายเท้าทั้งสองข้าง</b> <span>ในภาพ ลูกอยู่ด้านบน เท้าอยู่ด้านล่าง</span></li>
         <li><span>ถือให้ขนานพื้น (ไม่เอียง) ระยะจะแม่นที่สุด · แอปใช้ขนาดลูกกอล์ฟ (4.27 ซม.) เป็นไม้บรรทัด</span></li>
         <li><span>ใช้ได้ดีบนพรมหญ้าเขียวหรือหญ้าจริง ลูกสีขาว · ถ้ารองเท้าสีเดียวกับพื้นอาจหาเท้าไม่เจอ</span></li>
@@ -603,7 +605,7 @@ export function createPractice(root, ctx) {
     const tick = () => {
       if (!v.videoWidth || !cv.isConnected) return;
       const pw = 160, ph = Math.round(pw * v.videoHeight / v.videoWidth); if (off.width !== pw || off.height !== ph) { off.width = pw; off.height = ph; }
-      og.drawImage(v, 0, 0, pw, ph); const img = og.getImageData(0, 0, pw, ph), res = Vi.analyze(img);
+      og.drawImage(v, 0, 0, pw, ph); const img = og.getImageData(0, 0, pw, ph), res = Vi.analyze(img, { expR: Vi.expectedBallR(height(), pw) });
       let mres = null;
       if (res.ball && res.feet) {
         S.lost = Math.min(S.lost, 9);
@@ -615,11 +617,12 @@ export function createPractice(root, ctx) {
       // ข้อความ
       let cls = 'n', txt, st = '';
       if (!res.ball) txt = '🔍 หาลูกไม่เจอ · ให้เห็นลูกสีขาวบนพื้นชัดๆ';
-      else if (!res.feet) txt = '🔍 หาเท้าไม่เจอ · ให้เห็นปลายเท้าทั้งสองข้างใต้ลูก';
+      else if (!res.feet) txt = res.ball.size > 1.6 ? '⬆️ ยกมือถือสูงขึ้น ให้เห็นเท้าทั้งสองข้างใต้ลูก' : '🔍 หาเท้าไม่เจอ · ให้เห็นปลายเท้าทั้งสองข้างใต้ลูก';
       else { const lv = Vi.level(mres.errCm, ...Vi.BALL_TOL), cm = Math.abs(mres.errCm).toFixed(mres.errCm > -10 && mres.errCm < 10 ? 1 : 0); cls = lv;
         txt = lv === 'g' ? '✅ ตำแหน่งลูกพอดี' : `${lv === 'y' ? '🟡' : '🔴'} ขยับลูกไปทาง${mres.errCm < 0 ? 'เท้าหน้า' : 'เท้าหลัง'} ${cm} ซม.`;
         const wl = Vi.level(mres.wErr, ...Vi.STANCE_TOL), dcm = Math.abs(mres.stanceCm - mres.wantCm).toFixed(0);
-        st = `<i class="lv-${wl}"></i>${wl === 'g' ? 'ความกว้างการยืนพอดี' : mres.stanceCm < mres.wantCm ? `ยืนแคบไป ${dcm} ซม.` : `ยืนกว้างไป ${dcm} ซม.`} <small>(${Math.round(mres.stanceCm)} / ${Math.round(mres.wantCm)} ซม.)</small>`;
+        st = `<i class="lv-${wl}"></i>${wl === 'g' ? 'ความกว้างการยืนพอดี' : mres.stanceCm < mres.wantCm ? `ยืนแคบไป ${dcm} ซม.` : `ยืนกว้างไป ${dcm} ซม.`} <small>(${Math.round(mres.stanceCm)} / ${Math.round(mres.wantCm)} ซม.)</small>`
+          + (res.ball.r * 2 < 6 || res.ball.size < 0.5 ? '<br><small>⬇️ ลดมือถือลงอีกนิด ลูกในภาพเล็กไป ตัวเลขจะแม่นขึ้น</small>' : '');
         if (lv === 'g' && wl !== 'r') { S.g++; if (S.g === 4 && !S.beeped && D.liveBeep !== false) { S.beeped = true; beep(1046, 0.12); setTimeout(() => beep(1568, 0.16), 130); try { navigator.vibrate?.(60); } catch (e) {} } }
         else { S.g = 0; if (lv === 'r') S.beeped = false; } }
       ban.className = 'lban lb-' + cls; ban.textContent = txt; sub.hidden = !st; sub.innerHTML = st;
@@ -682,6 +685,7 @@ export function createPractice(root, ctx) {
         root.querySelector('[data-pi=bp]').value = m.bp; root.querySelector('[data-pi=w]').value = Math.round(m.w * 100); liveLabels(); return; }
       case 'lbeep': D.liveBeep = D.liveBeep === false; save(); t.classList.toggle('on', D.liveBeep !== false); return;
       case 'ldbg': V.ldbg = !V.ldbg; t.classList.toggle('on', V.ldbg); return;
+      case 'lshauto': D.shoulderManual = false; save(); render(); return;
       case 'lside': D.liveFlip = !D.liveFlip; save(); t.textContent = lvTargetLeft() ? '← ซ้าย' : 'ขวา →'; return;
       case 'hand': D.hand = v; save(); render(); return;
       case 'setreset': { const n = D.setup[V.setupK]?.note; D.setup[V.setupK] = n ? { note: n } : {}; save(); render(); return; }
@@ -727,7 +731,10 @@ export function createPractice(root, ctx) {
       if (e.type === 'change') { save(); render(); return; }
       const { d, m } = setupOf(V.setupK); root.querySelector('#stsvg').innerHTML = stanceSvg(d, m, D.hand); return;
     }
-    if (k === 'shoulder') { const n = +t.value; if (n >= 25 && n <= 70) { D.shoulder = n; if (e.type === 'change') save(); liveLabels(); } return; }
+    if (k === 'shoulder') { const n = +t.value; if (n >= 25 && n <= 70) { D.shoulder = n; D.shoulderManual = true; if (e.type === 'change') { save(); const h = root.querySelector('#lshn'); if (h) h.textContent = 'ใส่เอง'; } liveLabels(); } return; }
+    if (k === 'height') { const n = +t.value; if (n >= 120 && n <= 220) { D.height = n; if (e.type === 'change') save();
+      if (!D.shoulderManual) { const si = root.querySelector('[data-pi=shoulder]'); if (si) si.value = shoulder(); }
+      const c = root.querySelector('#lchest'); if (c) c.textContent = Vi.chestFromHeight(n); liveLabels(); } return; }
     if (e.type !== 'change') return;
     if (k === 'note') { (D.setup[V.setupK] = D.setup[V.setupK] || {}).note = t.value.trim(); save(); toast('บันทึกแล้ว ✓'); }
     if (k === 'camclub') V.club = t.value;

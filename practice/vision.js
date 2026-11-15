@@ -2,6 +2,11 @@
 // ภาพ = { data: RGBA, width, height } ขนาดเล็ก (กว้าง ~160 px) · มือถือถือแนวตั้ง หัวมือถือชี้ไปข้างหน้า (ฝั่งลูก)
 // → ลูกอยู่ด้านบนของภาพ เท้าอยู่ด้านล่าง แนวเป้าวิ่งซ้าย-ขวา
 export const BALL_CM = 4.27;
+// สัดส่วนร่างกายโดยประมาณจากส่วนสูง (ซม.) — ใช้เป็นค่าตั้งต้นเท่านั้น ผู้ใช้แก้เองได้
+export const shoulderFromHeight = h => Math.round(h * 0.245);   // ความกว้างไหล่
+export const chestFromHeight = h => Math.round(h * 0.62);       // ระดับอกตอนก้มตั้งท่า (ความสูงมือถือจากพื้น)
+// ขนาดลูกที่ควรเห็นในภาพ (รัศมี px ในภาพกว้าง pw) ถ้าถือมือถือที่ระดับอก · กล้องหลังมุมด้านแคบ (แนวตั้ง) ≈ 43°
+export const expectedBallR = (h, pw, fovDeg = 43) => pw * BALL_CM / (2 * chestFromHeight(h) * Math.tan(fovDeg * Math.PI / 360)) / 2;
 
 const lum = (d, i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
 const median = a => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
@@ -53,7 +58,9 @@ export function analyze(img, opt = {}) {
     for (let k = 0; k < 20; k++) { const a = k / 20 * 2 * Math.PI, x = Math.round(c.cx + Math.cos(a) * r * 1.9), y = Math.round(c.cy + Math.sin(a) * r * 1.9);
       if (x < 0 || y < 0 || x >= W || y >= H) continue; tot++; if (!fg[y * W + x]) ring++; }
     const ringBg = tot ? ring / tot : 0; if (ringBg < 0.5) continue;
-    const sc = asp * Math.min(1, fill) * ringBg; if (sc > best) { best = sc; ball = { x: c.cx, y: c.cy, r, id: c.id }; }
+    // ขนาดใกล้ที่คาดจากส่วนสูง = คะแนนดีกว่า (นุ่มนวล เพราะกล้องแต่ละรุ่นมุมไม่เท่ากัน)
+    const size = opt.expR ? Math.exp(-(Math.log(r / opt.expR) ** 2) / (2 * 0.55 ** 2)) : 1;
+    const sc = asp * Math.min(1, fill) * ringBg * size; if (sc > best) { best = sc; ball = { x: c.cx, y: c.cy, r, id: c.id }; }
   }
   // ---- เท้า: ส่วนที่ไม่ใช่พื้น ใต้ลูกลงมา · ฉายแนวตั้งในแถบความยาวรองเท้า → 2 ยอด ----
   const r = ball ? ball.r : W * 0.03, y0 = ball ? Math.min(H - 1, Math.round(ball.y + r * 2.2)) : Math.round(H * 0.35);
@@ -79,7 +86,7 @@ export function analyze(img, opt = {}) {
       }
     }
   }
-  return { bg, ball: ball && { x: ball.x, y: ball.y, r: ball.r }, feet, fg };
+  return { bg, ball: ball && { x: ball.x, y: ball.y, r: ball.r, size: opt.expR ? ball.r / opt.expR : null }, feet, fg };
 }
 
 // ผลการวัด: ตำแหน่งลูก 0 (ด้านในเท้าหลัง) → 100 (ด้านในเท้าหน้า), ความกว้างยืน (ซม.), ระยะที่ต้องขยับ (ซม.)

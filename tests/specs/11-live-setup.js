@@ -3,13 +3,14 @@ const path = require('path'), fs = require('fs'), os = require('os'), { pathToFi
 
 // Synthetic top-down scene (portrait 360×640): green ground, ball above, two shoes below (left dark, right white), trousers to the bottom.
 // Ball diameter 16 px = 4.27 cm → stance inner edges 97 ↔ 262 px = 165 px ≈ 44 cm.
-function scene({ ballX = 110, ballY = 230, ball = true, gap = 165, W = 360, H = 640, seed = 1 } = {}) {
+function scene({ ballX = 110, ballY = 230, ball = true, gap = 165, W = 360, H = 640, seed = 1, decoy = false } = {}) {
   const d = new Uint8ClampedArray(W * H * 4); let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const Lin = 180 - gap / 2, Rin = 180 + gap / 2, feet = [[Lin - 22, [50, 50, 58]], [Rin + 22, [228, 228, 232]]];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     let c = [60 + rnd() * 18, 128 + rnd() * 18, 58 + rnd() * 18];
     for (const [fx, fc] of feet) { const inShoe = ((x - fx) / 22) ** 2 + ((y - 400) / 55) ** 2 <= 1, inLeg = y > 430 && Math.abs(x - fx) < 20; if (inLeg) c = [40, 50, 90]; if (inShoe) c = fc; }
     if (ball && (x - ballX) ** 2 + (y - ballY) ** 2 <= 64) c = [246, 246, 244];
+    if (decoy && (x - 290) ** 2 + (y - 110) ** 2 <= 400) c = [240, 240, 238];   // big white round thing (tee marker / range token)
     const i = (y * W + x) * 4; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
   }
   return { data: d, width: W, height: H };
@@ -47,6 +48,9 @@ module.exports = async t => {
   t.ok('ball 4 cm off → yellow', near.m && Vi.level(near.m.errCm, ...Vi.BALL_TOL) === 'y', near.m && near.m.errCm);
   t.ok('left-handed (target on the right) flips lead/trail', Vi.measure(ok.r, false, { bp: 8, w: 1.1 }, 40) && Math.abs(Vi.measure(ok.r, false, { bp: 8, w: 1.1 }, 40).errCm) < 2.5);
   t.ok('no ball → nothing measured', !run({ ball: false }).r.ball && !run({ ball: false }).m);
+  t.ok('body estimates from height (shoulder ≈ 0.245 H, chest ≈ 0.62 H)', Vi.shoulderFromHeight(172) === 42 && Vi.chestFromHeight(172) === 107);
+  const expR = Vi.expectedBallR(170, 160), dec = Vi.analyze(shrink(scene({ decoy: true })), { expR });
+  t.ok('expected ball size from height picks the real ball over a bigger white disc', dec.ball && Math.abs(dec.ball.x - 110 * 160 / 360) < 1.5 && dec.ball.size > 0.6 && dec.ball.size < 1.5, dec.ball);
   const narrow = run({ gap: 110, ballX: 180 - 55 + 9 });
   t.ok('narrow stance flagged', narrow.m && narrow.m.stanceCm < 33 && Vi.level(narrow.m.wErr, ...Vi.STANCE_TOL) === 'r', narrow.m && narrow.m.stanceCm);
 
@@ -63,6 +67,10 @@ module.exports = async t => {
   t.ok('live screen: correct driver setup shows green', ban[0].includes('lb-g') && ban[1].includes('พอดี'), ban);
   t.ok('live screen: stance line shown', (await p.textContent('#lsub')).includes('ความกว้างการยืน'));
   // change the target to 7-iron (ball near centre) without leaving the camera → turns red, says move toward the trail foot
+  await p.fill('[data-pi=height]', '190'); await p.$eval('[data-pi=height]', e => e.dispatchEvent(new Event('change', { bubbles: true })));
+  t.ok('height → shoulder width and phone height update on the camera screen', (await p.inputValue('[data-pi=shoulder]')) === '47' && (await p.textContent('#lchest')) === '118' && !!(await p.$('#lv')));
+  await p.fill('[data-pi=shoulder]', '40'); await p.$eval('[data-pi=shoulder]', e => e.dispatchEvent(new Event('change', { bubbles: true })));
+  t.ok('shoulder width can still be typed in (kept as manual)', await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('golfpractice')); return d.shoulderManual === true && d.shoulder === 40 && d.height === 190; }));
   await p.tap('[data-pa=lsetk][data-v=MI]');
   await p.waitForFunction(() => document.querySelector('#lban')?.className.includes('lb-r'), null, { timeout: 5000 }).catch(() => {});
   const ban2 = await p.$eval('#lban', e => [e.className, e.textContent]);
