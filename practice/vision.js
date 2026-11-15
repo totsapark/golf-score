@@ -47,8 +47,8 @@ export function analyze(img, opt = {}) {
     const L = lum(d, i), mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
     if (L > Math.max(165, bgL + 55) && mx - mn < 70) white[p] = 1;
   }
-  // ---- ลูก: ก้อนสีขาว กลม ขนาดพอดี รอบๆ เป็นพื้น ----
-  let ball = null, best = 0;
+  // ---- ลูก: ก้อนสีขาว กลม ขนาดพอดี รอบๆ เป็นพื้น → เก็บไว้หลายลูก ----
+  const cands = [], ballLike = new Set();
   const { lab: wl, comps: wc } = components(white, W, H);
   for (const c of wc) {
     if (c.n < 5 || c.n > N * 0.03) continue;
@@ -58,47 +58,60 @@ export function analyze(img, opt = {}) {
     for (let k = 0; k < 20; k++) { const a = k / 20 * 2 * Math.PI, x = Math.round(c.cx + Math.cos(a) * r * 1.9), y = Math.round(c.cy + Math.sin(a) * r * 1.9);
       if (x < 0 || y < 0 || x >= W || y >= H) continue; tot++; if (!fg[y * W + x]) ring++; }
     const ringBg = tot ? ring / tot : 0; if (ringBg < 0.5) continue;
+    ballLike.add(c.id);
     // ขนาดใกล้ที่คาดจากส่วนสูง = คะแนนดีกว่า (นุ่มนวล เพราะกล้องแต่ละรุ่นมุมไม่เท่ากัน)
     const size = opt.expR ? Math.exp(-(Math.log(r / opt.expR) ** 2) / (2 * 0.55 ** 2)) : 1;
-    const sc = asp * Math.min(1, fill) * ringBg * size; if (sc > best) { best = sc; ball = { x: c.cx, y: c.cy, r, id: c.id }; }
+    cands.push({ x: c.cx, y: c.cy, r, id: c.id, sc: asp * Math.min(1, fill) * ringBg * size });
   }
+  cands.sort((p, q) => q.sc - p.sc);
+  // ไม่นับลูกอื่นๆ (ลูกที่วางรอ) เป็นส่วนของเท้า
+  const isFg = (x, y) => { const p = y * W + x; return fg[p] && !(wl[p] >= 0 && ballLike.has(wl[p])); };
   // ---- เท้า: ส่วนที่ไม่ใช่พื้น ใต้ลูกลงมา · ฉายแนวตั้งในแถบความยาวรองเท้า → 2 ยอด ----
-  const r = ball ? ball.r : W * 0.03, y0 = ball ? Math.min(H - 1, Math.round(ball.y + r * 2.2)) : Math.round(H * 0.35);
-  const isFg = (x, y) => { const p = y * W + x; return fg[p] && !(ball && wl[p] === ball.id); };
-  let toe = -1;
-  for (let y = y0; y < H && toe < 0; y++) { let n = 0; for (let x = 0; x < W; x++) n += isFg(x, y); if (n >= Math.max(3, r * 1.5)) toe = y; }
-  let feet = null;
-  if (toe >= 0) {
+  function findFeet(ball) {
+    const r = ball ? ball.r : W * 0.03, y0 = ball ? Math.min(H - 1, Math.round(ball.y + r * 2.2)) : Math.round(H * 0.35);
+    let toe = -1;
+    for (let y = y0; y < H && toe < 0; y++) { let n = 0; for (let x = 0; x < W; x++) n += isFg(x, y); if (n >= Math.max(3, r * 1.5)) toe = y; }
+    if (toe < 0) return null;
     const y1 = Math.min(H, toe + Math.round(r * 2 * 7)), proj = new Float32Array(W);
     for (let y = toe; y < y1; y++) for (let x = 0; x < W; x++) proj[x] += isFg(x, y);
     const k = Math.max(1, Math.round(r * 0.6)), sm = new Float32Array(W);
-    for (let x = 0; x < W; x++) { let s = 0, n = 0; for (let j = x - k; j <= x + k; j++) if (j >= 0 && j < W) { s += proj[j]; n++; } sm[x] = s / n; }
+    for (let x = 0; x < W; x++) { let s2 = 0, n = 0; for (let j = x - k; j <= x + k; j++) if (j >= 0 && j < W) { s2 += proj[j]; n++; } sm[x] = s2 / n; }
     let a = 0; for (let x = 1; x < W; x++) if (sm[x] > sm[a]) a = x;
     const sep = Math.max(4 * r, W * 0.12); let b = -1;
     for (let x = 0; x < W; x++) if (Math.abs(x - a) >= sep && (b < 0 || sm[x] > sm[b])) b = x;
     const minH = Math.max(3, r * 2);
-    if (b >= 0 && sm[a] >= minH && sm[b] >= minH) {
-      const [l, rr] = a < b ? [a, b] : [b, a]; let valley = Infinity; for (let x = l; x <= rr; x++) valley = Math.min(valley, sm[x]);
-      if (valley < 0.5 * Math.min(sm[l], sm[rr])) {
-        const edge = (pk, dir) => { const t = sm[pk] * 0.35; let x = pk; while (x + dir >= 0 && x + dir < W && sm[x + dir] > t) x += dir; return x; };
-        const L = { inner: edge(l, 1), outer: edge(l, -1), peak: l }, R = { inner: edge(rr, -1), outer: edge(rr, 1), peak: rr };
-        if (R.inner - L.inner > 2 * r && L.inner - L.outer >= r * 1.2 && R.outer - R.inner >= r * 1.2) feet = { L, R, toe, y1 };
-      }
-    }
+    if (b < 0 || sm[a] < minH || sm[b] < minH) return null;
+    const [l, rr] = a < b ? [a, b] : [b, a]; let valley = Infinity; for (let x = l; x <= rr; x++) valley = Math.min(valley, sm[x]);
+    if (valley >= 0.5 * Math.min(sm[l], sm[rr])) return null;
+    const edge = (pk, dir) => { const t = sm[pk] * 0.35; let x = pk; while (x + dir >= 0 && x + dir < W && sm[x + dir] > t) x += dir; return x; };
+    const L = { inner: edge(l, 1), outer: edge(l, -1), peak: l }, R = { inner: edge(rr, -1), outer: edge(rr, 1), peak: rr };
+    return R.inner - L.inner > 2 * r && L.inner - L.outer >= r * 1.2 && R.outer - R.inner >= r * 1.2 ? { L, R, toe, y1 } : null;
   }
-  return { bg, ball: ball && { x: ball.x, y: ball.y, r: ball.r, size: opt.expR ? ball.r / opt.expR : null }, feet, fg };
+  // ลองลูกที่น่าจะใช่มากสุด 4 ลูก · ลูกที่มีเท้าสองข้างอยู่ด้านล่างและอยู่ในแนวเท้า = ลูกที่ตั้งท่าอยู่จริง
+  let ball = cands[0] || null, feet = null, best = -1;
+  for (const c of cands.slice(0, 4)) {
+    const f = findFeet(c); let sc = c.sc * 0.3;
+    if (f) { const inLine = c.x >= f.L.outer - 2 * c.r && c.x <= f.R.outer + 2 * c.r; sc = c.sc * (inLine ? 1 : 0.4) + (inLine ? 1 : 0.2); }
+    if (sc > best) { best = sc; ball = c; feet = f; }
+  }
+  if (!ball) feet = findFeet(null);
+  return { bg, ball: ball && { x: ball.x, y: ball.y, r: ball.r, size: opt.expR ? ball.r / opt.expR : null }, feet, fg, n: cands.length };
 }
 
 // ผลการวัด: ตำแหน่งลูก 0 (ด้านในเท้าหลัง) → 100 (ด้านในเท้าหน้า), ความกว้างยืน (ซม.), ระยะที่ต้องขยับ (ซม.)
 // targetLeft = เป้าอยู่ด้านซ้ายของภาพ (ถนัดขวา หัวมือถือชี้ไปข้างหน้า)
-export function measure(res, targetLeft, setup, shoulderCm) {
+// calib = ตัวคูณชดเชยจากการเทียบตลับเมตร (ระยะจริง ÷ ระยะที่แอปวัด)
+export function measure(res, targetLeft, setup, shoulderCm, calib = 1) {
   const { ball, feet } = res; if (!ball || !feet) return null;
   const front = targetLeft ? feet.L.inner : feet.R.inner, back = targetLeft ? feet.R.inner : feet.L.inner;
-  const span = back - front, pxcm = ball.r * 2 / BALL_CM;
+  const span = back - front, pxcm = ball.r * 2 / BALL_CM / (calib || 1);
   const bp = (back - ball.x) / span * 100, tx = back - setup.bp / 100 * span;
   const errCm = (ball.x - tx) / pxcm * (targetLeft ? -1 : 1);   // + = ลูกค่อนไปทางเท้าหน้ามากเกิน
   const stanceCm = Math.abs(span) / pxcm, wantCm = setup.w * shoulderCm;
   return { bp, errCm, tx, front, back, pxcm, stanceCm, wantCm, wErr: (stanceCm - wantCm) / wantCm };
 }
+// มุมเอียงของมือถือจากแนวขนานพื้น (องศา) · beta/gamma จาก deviceorientation (วางราบหงายจอ = 0, 0)
+export const tiltOf = (beta, gamma) => Math.acos(Math.max(-1, Math.min(1, Math.cos(beta * Math.PI / 180) * Math.cos(gamma * Math.PI / 180)))) * 180 / Math.PI;
+export const TILT_OK = 8, TILT_BAD = 20;
 export const level = (v, g, y) => Math.abs(v) <= g ? 'g' : Math.abs(v) <= y ? 'y' : 'r';
 export const BALL_TOL = [2.5, 6], STANCE_TOL = [0.12, 0.25];   // ซม. / สัดส่วน

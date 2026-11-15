@@ -57,7 +57,7 @@ export function createPractice(root, ctx) {
   }
   function stopAll() {
     if (live.rec && live.rec.state !== 'inactive') { live.rec.onstop = null; try { live.rec.stop(); } catch (e) {} }
-    live.stream?.getTracks().forEach(t => t.stop());
+    live.stream?.getTracks().forEach(t => t.stop()); (live.off || []).forEach(f => f());
     (live.timers || []).forEach(clearTimeout); (live.ivs || []).forEach(clearInterval); if (live.raf) cancelAnimationFrame(live.raf);
     (live.urls || []).forEach(u => URL.revokeObjectURL(u)); wake(false);
     live = { wl: live.wl };
@@ -582,16 +582,43 @@ export function createPractice(root, ctx) {
         <label class="lb"><span>ความกว้างการยืน</span> · <b id="lwv">${Math.round(m.w * 100)}%</b> <span>ของไหล่</span> = <b id="lwcm">${Math.round(m.w * shoulder())}</b> <span>ซม.</span></label><input class="rng" type="range" min="25" max="130" value="${Math.round(m.w * 100)}" data-pi="w">
         <div class="trow"><span><b>ส่วนสูงของคุณ (ซม.)</b><br><span class="muted">ใช้ประมาณความกว้างไหล่และระดับถือมือถือ</span></span><input type="number" inputmode="numeric" data-pi="height" value="${height()}" style="width:84px;text-align:center;font-weight:700"></div>
         <div class="trow"><span><b>ความกว้างไหล่</b><br><span class="muted" id="lshn">${D.shoulderManual ? 'ใส่เอง' : 'ประมาณจากส่วนสูง · แก้เองได้'}</span></span><span style="display:flex;gap:6px;align-items:center">${D.shoulderManual ? '<button class="btn sec" style="padding:6px 9px" data-pa="lshauto" title="คำนวณจากส่วนสูง">↺</button>' : ''}<input type="number" inputmode="numeric" data-pi="shoulder" value="${shoulder()}" style="width:84px;text-align:center;font-weight:700"></span></div>
+        <div class="trow"><span><b>📏 เทียบกับตลับเมตร</b><br><span class="muted" id="lcaln"></span></span><span style="display:flex;gap:6px;align-items:center"><input type="number" inputmode="decimal" id="lcalv" placeholder="ซม." style="width:70px;text-align:center"><button class="btn sec" style="padding:8px 10px" data-pa="lcal">เทียบ</button></span></div>
+        <div id="ltiltrow" class="trow" hidden><span><b>📐 ตัววัดระดับ</b><br><span class="muted">ต้องอนุญาตให้แอปใช้เซนเซอร์เอียงของมือถือ</span></span><button class="btn sec" style="padding:8px 10px" data-pa="ltilt">เปิด</button></div>
         <div class="trow"><span><b>เสียงเมื่อพอดี</b></span><button class="sw ${D.liveBeep !== false ? 'on' : ''}" data-pa="lbeep"></button></div>
         <div class="trow"><span><b>เป้าอยู่ฝั่งไหนของจอ</b><br><span class="muted">ดูลูกศร "เป้า" บนภาพให้ชี้ไปทางเป้าจริง</span></span><button class="btn sec" style="padding:8px 12px" data-pa="lside">${lvTargetLeft() ? '← ซ้าย' : 'ขวา →'}</button></div>
         <div class="trow"><span><b>ดูสิ่งที่กล้องเห็น</b><br><span class="muted">สีแดง = ส่วนที่แอปคิดว่าไม่ใช่พื้น</span></span><button class="sw ${V.ldbg ? 'on' : ''}" data-pa="ldbg"></button></div></div>
       <div class="card"><h2>📱 ถือมือถือยังไง</h2><ul class="plist">
         <li><span>ยืนท่าตั้งตามปกติ ถือมือถือแนวตั้งระดับอก</span> (<span>สูงจากพื้นประมาณ</span> <b id="lchest">${Vi.chestFromHeight(height())}</b> <span>ซม.</span>) <b>ส่องกล้องหลังลงพื้น</b> <span>ให้หัวมือถือชี้ไปทางลูก</span></li>
         <li><span>ให้เห็น</span> <b>ลูก + ปลายเท้าทั้งสองข้าง</b> <span>ในภาพ ลูกอยู่ด้านบน เท้าอยู่ด้านล่าง</span></li>
-        <li><span>ถือให้ขนานพื้น (ไม่เอียง) ระยะจะแม่นที่สุด · แอปใช้ขนาดลูกกอล์ฟ (4.27 ซม.) เป็นไม้บรรทัด</span></li>
+        <li><b>ถือให้ขนานพื้น</b> · <span>ดูลูกน้ำมุมขวาบน ให้จุดอยู่ในวงกลางเป็นสีเขียว (เอียงไม่เกิน 8°) แอปจะขึ้นเขียวเฉพาะตอนถือขนานพื้นเท่านั้น</span></li>
+        <li><span>ให้กล้องอยู่เหนือจุดกึ่งกลางระหว่างลูกกับปลายเท้า · ใช้กล้องปกติ (1x) · ถือนิ่ง 1-2 วินาที</span></li>
+        <li><b>มีลูกในภาพได้หลายลูก</b> · <span>แอปเลือกลูกที่อยู่หน้าเท้าเอง แต่ถ้ากันลูกอื่นออกนอกภาพได้จะชัวร์ที่สุด</span></li>
+        <li><span>อย่าให้เงาตัวเองพาดลูก/เท้า · แอปใช้ขนาดลูกกอล์ฟ (4.27 ซม.) เป็นไม้บรรทัด</span></li>
+        <li><b>ครั้งแรก</b> · <span>วัดระยะด้านในเท้าจริงด้วยตลับเมตร แล้วกด "เทียบ" แอปจะชดเชยให้ทุกครั้ง</span></li>
         <li><span>ใช้ได้ดีบนพรมหญ้าเขียวหรือหญ้าจริง ลูกสีขาว · ถ้ารองเท้าสีเดียวกับพื้นอาจหาเท้าไม่เจอ</span></li>
         <li><span>เขียว = พอดี · เหลือง = ใกล้แล้ว · แดง = ต้องขยับ · เขียวแล้วค่อยเก็บมือถือ จับไม้ ตีได้เลย</span></li></ul></div>
       <button class="btn sec full" data-pa="go" data-v="setup">‹ กลับ</button>`;
+  }
+  // ตัววัดระดับ: ใช้เซนเซอร์เอียงของมือถือ (iPhone ต้องกดอนุญาต)
+  function askTilt(show) {
+    const E = window.DeviceOrientationEvent;
+    if (E && typeof E.requestPermission === 'function') E.requestPermission().then(r => { D.tiltPerm = r; save(); if (r === 'granted') { listenTilt(); const row = root.querySelector('#ltiltrow'); if (row) row.hidden = true; } else if (show) toast('ไม่ได้รับอนุญาต · เปิดได้ที่ Settings → Safari → Motion & Orientation Access'); }).catch(() => {});
+  }
+  function listenTilt() {
+    if (live.tiltOn) return; live.tiltOn = true;
+    const on = e => { if (e.beta == null || e.gamma == null) return; live.tb = e.beta; live.tg = e.gamma; live.tilt = Vi.tiltOf(e.beta, e.gamma); };
+    addEventListener('deviceorientation', on); (live.off = live.off || []).push(() => removeEventListener('deviceorientation', on));
+    later(() => { if (live.tilt == null) { const row = root.querySelector('#ltiltrow'); if (row && typeof window.DeviceOrientationEvent?.requestPermission === 'function') row.hidden = false; } }, 2500);
+  }
+  // เทียบกับตลับเมตร: ระยะด้านในเท้าที่วัดจริง ÷ ที่แอปวัดได้ตอนนี้ = ตัวคูณชดเชย
+  function calLabel() { const el = root.querySelector('#lcaln'); if (!el) return; const c = D.calib || 1;
+    el.innerHTML = Math.abs(c - 1) < 0.005 ? 'วัดระยะด้านในเท้าจริง ใส่ตัวเลขตอนแอปจับเท้าได้' : `ชดเชยแล้ว ×${c.toFixed(2)} · <a href="#" data-pa="lcalreset">ล้าง</a>`; }
+  function calibrate() {
+    const v = +root.querySelector('#lcalv')?.value; if (!(v >= 10 && v <= 120)) return toast('ใส่ระยะที่วัดจริง (ซม.) ก่อน');
+    if (!live.raw || Date.now() - live.rawT > 1500) return toast('ให้แอปจับลูกและเท้าได้ก่อน แล้วกดเทียบ');
+    if (live.tilt != null && live.tilt > Vi.TILT_OK) return toast('ถือมือถือให้ขนานพื้นก่อน แล้วกดเทียบ');
+    const f = v / live.raw; if (f < 0.7 || f > 1.4) return toast(`ต่างกันมากเกิน (แอปวัดได้ ${Math.round(live.raw)} ซม.) · ลองถือใหม่ให้ขนานพื้น`);
+    D.calib = Math.round(f * 1000) / 1000; save(); calLabel(); toast(`เทียบแล้ว ✓ ชดเชย ×${D.calib.toFixed(2)}`);
   }
   async function mountLive() {
     const v = root.querySelector('#lv'), ban = root.querySelector('#lban');
@@ -599,7 +626,7 @@ export function createPractice(root, ctx) {
     let s = null; try { s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); } catch (e) {}
     if (V.page !== 'live' || !root.contains(v)) { s?.getTracks().forEach(t => t.stop()); return; }
     if (!s) { ban.textContent = 'เปิดกล้องไม่ได้ · กดอนุญาตให้ใช้กล้อง'; return; }
-    live.stream = s; v.srcObject = s; v.play?.().catch(() => {}); wake(true);
+    live.stream = s; v.srcObject = s; v.play?.().catch(() => {}); wake(true); listenTilt(); calLabel();
     const off = document.createElement('canvas'), og = off.getContext('2d', { willReadFrequently: true }), cv = root.querySelector('#lov'), sub = root.querySelector('#lsub');
     const S = { lost: 99, g: 0, beeped: false }, ema = (k, x, a = 0.35) => { S[k] = S[k] == null || S.lost > 8 ? x : S[k] + (x - S[k]) * a; return S[k]; };
     const tick = () => {
@@ -611,7 +638,7 @@ export function createPractice(root, ctx) {
         S.lost = Math.min(S.lost, 9);
         const sm = { ball: { x: ema('bx', res.ball.x), y: ema('by', res.ball.y), r: ema('br', res.ball.r, 0.2) },
           feet: { ...res.feet, L: { ...res.feet.L, inner: ema('fl', res.feet.L.inner) }, R: { ...res.feet.R, inner: ema('fr', res.feet.R.inner) } } };
-        S.lost = 0; mres = Vi.measure(sm, lvTargetLeft(), setupOf(V.setupK).m, shoulder()); res.sm = sm;
+        S.lost = 0; mres = Vi.measure(sm, lvTargetLeft(), setupOf(V.setupK).m, shoulder(), D.calib || 1); res.sm = sm; live.raw = mres.stanceCm / (D.calib || 1); live.rawT = Date.now();
       } else S.lost++;
       drawLive(cv, v, img, res, mres);
       // ข้อความ
@@ -623,7 +650,11 @@ export function createPractice(root, ctx) {
         const wl = Vi.level(mres.wErr, ...Vi.STANCE_TOL), dcm = Math.abs(mres.stanceCm - mres.wantCm).toFixed(0);
         st = `<i class="lv-${wl}"></i>${wl === 'g' ? 'ความกว้างการยืนพอดี' : mres.stanceCm < mres.wantCm ? `ยืนแคบไป ${dcm} ซม.` : `ยืนกว้างไป ${dcm} ซม.`} <small>(${Math.round(mres.stanceCm)} / ${Math.round(mres.wantCm)} ซม.)</small>`
           + (res.ball.r * 2 < 6 || res.ball.size < 0.5 ? '<br><small>⬇️ ลดมือถือลงอีกนิด ลูกในภาพเล็กไป ตัวเลขจะแม่นขึ้น</small>' : '');
-        if (lv === 'g' && wl !== 'r') { S.g++; if (S.g === 4 && !S.beeped && D.liveBeep !== false) { S.beeped = true; beep(1046, 0.12); setTimeout(() => beep(1568, 0.16), 130); try { navigator.vibrate?.(60); } catch (e) {} } }
+        const tilt = live.tilt;
+        if (tilt != null && tilt > Vi.TILT_OK) {   // มือถือเอียง → ตัวเลขไม่น่าเชื่อ ยังไม่ให้เขียว
+          st = `<small>${lv === 'g' ? 'ลูกดูพอดีแล้ว' : `ลูก: ขยับไปทาง${mres.errCm < 0 ? 'เท้าหน้า' : 'เท้าหลัง'} ${cm} ซม.`} · ${wl === 'g' ? 'ยืนกว้างพอดี' : `ยืน ${Math.round(mres.stanceCm)} / ${Math.round(mres.wantCm)} ซม.`}</small>`;
+          cls = tilt > Vi.TILT_BAD ? 'r' : 'y'; txt = `📐 ถือมือถือให้ขนานพื้น · เอียง ${Math.round(tilt)}°`; S.g = 0;
+        } else if (lv === 'g' && wl !== 'r') { S.g++; if (S.g === 4 && !S.beeped && D.liveBeep !== false) { S.beeped = true; beep(1046, 0.12); setTimeout(() => beep(1568, 0.16), 130); try { navigator.vibrate?.(60); } catch (e) {} } }
         else { S.g = 0; if (lv === 'r') S.beeped = false; } }
       ban.className = 'lban lb-' + cls; ban.textContent = txt; sub.hidden = !st; sub.innerHTML = st;
     };
@@ -649,6 +680,14 @@ export function createPractice(root, ctx) {
       zone(lo, hi, '#e53935cc'); zone(mm.tx - Vi.BALL_TOL[1] * mm.pxcm, mm.tx + Vi.BALL_TOL[1] * mm.pxcm, '#fdd835dd'); zone(mm.tx - Vi.BALL_TOL[0] * mm.pxcm, mm.tx + Vi.BALL_TOL[0] * mm.pxcm, '#43a047ee');
       g.strokeStyle = '#fff'; g.lineWidth = 2 * dpr; g.beginPath(); g.moveTo(X(mm.tx), y - half - 6 * dpr); g.lineTo(X(mm.tx), y + half + 6 * dpr); g.stroke();
     }
+    if (live.tilt != null) {   // ลูกน้ำวัดระดับ (มุมขวาบน ใต้แถบข้อความ)
+      const cx = W - 40 * dpr, cy = 92 * dpr, R0 = 24 * dpr, t = live.tilt, col = t <= Vi.TILT_OK ? '#43a047' : t <= Vi.TILT_BAD ? '#fdd835' : '#e53935';
+      const k = Math.min(1, t / 25) / Math.max(1e-6, Math.hypot(live.tg || 0, live.tb || 0)), bx = cx - (live.tg || 0) * k * R0, by = cy - (live.tb || 0) * k * R0;
+      g.fillStyle = '#000000a0'; g.beginPath(); g.arc(cx, cy, R0 + 4 * dpr, 0, 7); g.fill();
+      g.strokeStyle = '#ffffff90'; g.lineWidth = 1.5 * dpr; g.beginPath(); g.arc(cx, cy, R0 * Vi.TILT_OK / 25, 0, 7); g.moveTo(cx - R0, cy); g.lineTo(cx + R0, cy); g.moveTo(cx, cy - R0); g.lineTo(cx, cy + R0); g.stroke();
+      g.fillStyle = col; g.beginPath(); g.arc(isFinite(bx) ? bx : cx, isFinite(by) ? by : cy, 7 * dpr, 0, 7); g.fill();
+      g.fillStyle = '#fff'; g.font = `700 ${12 * dpr}px sans-serif`; g.fillText(Math.round(t) + '°', cx, cy + R0 + 14 * dpr);
+    }
     if (B) { const lv = mm ? Vi.level(mm.errCm, ...Vi.BALL_TOL) : null; g.strokeStyle = lv ? COL[lv] : '#fff'; g.lineWidth = 4 * dpr; g.setLineDash(lv ? [] : [5 * dpr, 4 * dpr]);
       g.beginPath(); g.arc(X(B.x), Y(B.y), Math.max(B.r * sc * 1.6, 12 * dpr), 0, 7); g.stroke(); g.setLineDash([]); }
   }
@@ -661,7 +700,10 @@ export function createPractice(root, ctx) {
     const t = e.target.closest('[data-pa]'); if (!t || !root.contains(t)) return;
     const a = t.dataset.pa, v = t.dataset.v;
     switch (a) {
-      case 'go': go(v); return;
+      case 'go': if (v === 'live') askTilt(); go(v); return;
+      case 'ltilt': askTilt(true); return;
+      case 'lcal': calibrate(); return;
+      case 'lcalreset': e.preventDefault(); D.calib = 1; save(); calLabel(); return;
       case 'unit': D.unit = v; save(); V.dist = {}; render(); return;
       case 'rholes': V.rfHoles = +v; { const F = saveForm(); delete F.par; delete F.fwN; } render(); return;
       case 'rsave': saveRound(); return;

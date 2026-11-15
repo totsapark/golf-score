@@ -3,13 +3,14 @@ const path = require('path'), fs = require('fs'), os = require('os'), { pathToFi
 
 // Synthetic top-down scene (portrait 360×640): green ground, ball above, two shoes below (left dark, right white), trousers to the bottom.
 // Ball diameter 16 px = 4.27 cm → stance inner edges 97 ↔ 262 px = 165 px ≈ 44 cm.
-function scene({ ballX = 110, ballY = 230, ball = true, gap = 165, W = 360, H = 640, seed = 1, decoy = false } = {}) {
+function scene({ ballX = 110, ballY = 230, ball = true, gap = 165, W = 360, H = 640, seed = 1, decoy = false, stray = false } = {}) {
   const d = new Uint8ClampedArray(W * H * 4); let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const Lin = 180 - gap / 2, Rin = 180 + gap / 2, feet = [[Lin - 22, [50, 50, 58]], [Rin + 22, [228, 228, 232]]];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     let c = [60 + rnd() * 18, 128 + rnd() * 18, 58 + rnd() * 18];
     for (const [fx, fc] of feet) { const inShoe = ((x - fx) / 22) ** 2 + ((y - 400) / 55) ** 2 <= 1, inLeg = y > 430 && Math.abs(x - fx) < 20; if (inLeg) c = [40, 50, 90]; if (inShoe) c = fc; }
     if (ball && (x - ballX) ** 2 + (y - ballY) ** 2 <= 64) c = [246, 246, 244];
+    if (stray && (x - 335) ** 2 + (y - 150) ** 2 <= 64) c = [246, 246, 244];   // another ball lying off to the side
     if (decoy && (x - 290) ** 2 + (y - 110) ** 2 <= 400) c = [240, 240, 238];   // big white round thing (tee marker / range token)
     const i = (y * W + x) * 4; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
   }
@@ -51,6 +52,11 @@ module.exports = async t => {
   t.ok('body estimates from height (shoulder ≈ 0.245 H, chest ≈ 0.62 H)', Vi.shoulderFromHeight(172) === 42 && Vi.chestFromHeight(172) === 107);
   const expR = Vi.expectedBallR(170, 160), dec = Vi.analyze(shrink(scene({ decoy: true })), { expR });
   t.ok('expected ball size from height picks the real ball over a bigger white disc', dec.ball && Math.abs(dec.ball.x - 110 * 160 / 360) < 1.5 && dec.ball.size > 0.6 && dec.ball.size < 1.5, dec.ball);
+  const st = Vi.analyze(shrink(scene({ stray: true })), { expR });
+  t.ok('stray ball off to the side: picks the ball in line with the feet', st.ball && Math.abs(st.ball.x - 110 * 160 / 360) < 1.5 && st.feet && st.n === 2, st.ball);
+  t.ok('tilt angle from the motion sensor', Vi.tiltOf(0, 0) === 0 && Math.abs(Vi.tiltOf(10, 0) - 10) < 1e-9 && Math.abs(Vi.tiltOf(0, -15) - 15) < 1e-9);
+  const cal = Vi.measure(ok.r, true, DRIVER, 40, 1.1);
+  t.ok('tape-measure calibration scales every cm value', Math.abs(cal.stanceCm - ok.m.stanceCm * 1.1) < 1e-9 && Math.abs(cal.errCm - ok.m.errCm * 1.1) < 1e-9);
   const narrow = run({ gap: 110, ballX: 180 - 55 + 9 });
   t.ok('narrow stance flagged', narrow.m && narrow.m.stanceCm < 33 && Vi.level(narrow.m.wErr, ...Vi.STANCE_TOL) === 'r', narrow.m && narrow.m.stanceCm);
 
@@ -71,6 +77,22 @@ module.exports = async t => {
   t.ok('height → shoulder width and phone height update on the camera screen', (await p.inputValue('[data-pi=shoulder]')) === '47' && (await p.textContent('#lchest')) === '118' && !!(await p.$('#lv')));
   await p.fill('[data-pi=shoulder]', '40'); await p.$eval('[data-pi=shoulder]', e => e.dispatchEvent(new Event('change', { bubbles: true })));
   t.ok('shoulder width can still be typed in (kept as manual)', await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('golfpractice')); return d.shoulderManual === true && d.shoulder === 40 && d.height === 190; }));
+  // level indicator: tilted phone never shows green
+  const tilt = async (b, gm = 0) => { await p.evaluate(([b2, g2]) => dispatchEvent(new DeviceOrientationEvent('deviceorientation', { alpha: 0, beta: b2, gamma: g2 })), [b, gm]); await p.waitForTimeout(400); return p.$eval('#lban', e => [e.className, e.textContent]); };
+  let tb = await tilt(14);
+  await p.evaluate(() => scrollTo(0, 0)); await p.screenshot({ path: path.join(os.tmpdir(), 'golf-live-tilt.png') });
+  t.ok('tilted 14° → yellow "hold level", not green', tb[0].includes('lb-y') && tb[1].includes('ขนานพื้น') && tb[1].includes('14'), tb);
+  tb = await tilt(5, 25);
+  t.ok('tilted 25° → red', tb[0].includes('lb-r'), tb);
+  tb = await tilt(3, 2);
+  t.ok('level again → green', tb[0].includes('lb-g'), tb);
+  // tape-measure calibration
+  const raw = await p.evaluate(() => +document.querySelector('#lsub').textContent.match(/\((\d+) \//)[1]);
+  await p.fill('#lcalv', String(Math.round(raw * 1.08))); await p.tap('[data-pa=lcal]'); await p.waitForTimeout(300);
+  const cal2 = await p.evaluate(() => JSON.parse(localStorage.getItem('golfpractice')).calib);
+  t.ok('calibrate against a tape measure (factor saved and shown)', Math.abs(cal2 - Math.round(raw * 1.08) / raw) < 0.03 && (await p.textContent('#lcaln')).includes('ชดเชย'), { raw, cal2 });
+  await p.tap('#lcaln [data-pa=lcalreset]');
+  t.ok('calibration can be cleared', (await p.evaluate(() => JSON.parse(localStorage.getItem('golfpractice')).calib)) === 1);
   await p.tap('[data-pa=lsetk][data-v=MI]');
   await p.waitForFunction(() => document.querySelector('#lban')?.className.includes('lb-r'), null, { timeout: 5000 }).catch(() => {});
   const ban2 = await p.$eval('#lban', e => [e.className, e.textContent]);
