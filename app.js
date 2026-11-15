@@ -4,9 +4,10 @@ import * as K from './golf.js';
 import * as A from './analysis.js';
 import qrcode from './vendor/qrcode.mjs';
 import { initLang, tr, shortDate } from './i18n.js';
+import { createPractice } from './practice.js';
 import { createMap, createReplay, CLUB_MAIN, CLUB_SUB, CLUB_ORDER, clubCat, SAT, personIcon, searchCourses, importOSM } from './map.js';
 
-const APPVER = '2.19.0';
+const APPVER = '2.20.0';
 const $app = document.getElementById('app');
 const Q = new URLSearchParams(location.search), MOCK = Q.has('mock');
 const DEV = MOCK ? sessionStorage : localStorage;   // ตัวตนของเครื่อง (mock = แยกต่อแท็บเพื่อทดสอบ)
@@ -29,6 +30,7 @@ const addMyGame = g => { const a = myGames().filter(x => x.code !== g.code); a.u
 const PREF = { unit: 'y', sun: false, wake: true, sat: true, shots: true, ...jget(localStorage, 'golf2_prefs', {}) };
 const setPref = (k, v) => { PREF[k] = v; jset(localStorage, 'golf2_prefs', PREF); };
 let HIST = jget(localStorage, 'golf2_hist', []);
+let PR = null; // หน้าฝึกซ้อม
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function today() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -162,6 +164,8 @@ addEventListener('popstate', () => {
   const nc = (new URLSearchParams(location.search).get('g') || '').toUpperCase() || null;
   const keep = () => { const u = new URL(location.href); u.searchParams.set('g', CODE); history.pushState({}, '', u); };
   if (window.__hvClose) { window.__hvClose(); if (UI.view === 'game' && CODE) keep(); return; } // ปิดมุมมองหลุมเต็มจอ
+  if (UI.view === 'practice' && PR && !document.querySelector('.dlg') && PR.back()) { history.pushState({}, '', location.href); return; } // ฝึกซ้อม: ย้อนกลับทีละหน้า
+  if (UI.view === 'practice') { const d = document.querySelector('.dlg'); if (d) { d.remove(); history.pushState({}, '', location.href); return; } }
   const d = document.querySelector('.dlg');
   if (d && UI.view === 'game') { d.remove(); keep(); return; }
   if (UI.view === 'game' && CODE) { keep(); if (UI.tab !== 'hole') { UI.tab = 'hole'; jset(DEV, 'golf2_tab', 'hole'); render(); scrollTo(0, 0); } else toast('ยังอยู่ในแก๊ง · กลับหน้าแรกได้ที่แท็บ 👥 แก๊ง'); return; }
@@ -380,7 +384,7 @@ function hdr() {
   document.querySelector('[data-act=sun]').classList.toggle('on', !!PREF.sun);
   document.querySelector('[data-act=wake]').classList.toggle('on', !!PREF.wake);
   const game = UI.view === 'game' && G;
-  document.getElementById('title').textContent = game ? '⛳ ' + (G.meta.course || 'Golf Live') : '⛳ Golf Live';
+  document.getElementById('title').textContent = game ? '⛳ ' + (G.meta.course || 'Golf Live') : UI.view === 'practice' ? tr('🏋️ ฝึกซ้อม') : '⛳ Golf Live';
   const np = Object.keys(OUT).length;
   document.getElementById('hinfo').innerHTML = game ? `${CODE}<br>${online ? (np ? `กำลังส่ง ${np}` : 'ออนไลน์') : `<b style="color:#ffab91">ออฟไลน์${np ? ' · รอส่ง ' + np : ''}</b>`}` : (MOCK ? 'โหมดทดสอบ' : '');
   const nav = document.getElementById('tabs'); nav.hidden = !game; document.body.classList.toggle('nonav', !game);
@@ -392,6 +396,7 @@ function render() {
   hdr();
   if (replayObj) { replayObj.destroy(); replayObj = null; }
   if (UI.view !== 'game' || UI.tab !== 'map') { if (mapObj) { mapObj.destroy(); mapObj = null; } }
+  if (UI.view !== 'practice' && PR) { PR.destroy(); PR = null; }
   const v = UI.view;
   if (v === 'loading') $app.innerHTML = '<div class="card center muted">กำลังโหลด...</div>';
   else if (v === 'nocfg') rNoCfg();
@@ -402,6 +407,7 @@ function render() {
   else if (v === 'join') rJoin();
   else if (v === 'nonet') $app.innerHTML = `<div class="card center"><h2>📶 ยังเชื่อมต่อไม่ได้</h2><p class="muted">เข้าแก๊งครั้งแรกต้องใช้อินเทอร์เน็ต หลังจากนั้นเปิดได้แม้สัญญาณหาย</p><button class="btn full" data-act="retry">ลองใหม่</button><button class="btn sec full" data-act="home">กลับหน้าแรก</button></div>`;
   else if (v === 'hist') rHist();
+  else if (v === 'practice') { if (!PR) PR = createPractice($app, { esc, toast, ask, dlg, tr, hist: () => HIST, unit: () => PREF.unit }); PR.render(); }
   else if (v === 'histrp') { const r = HIST.find(x => x.rid === UI.histRid);
     $app.innerHTML = r ? `<div class="card"><h2>🗺️ ${esc(r.course || 'รอบกอล์ฟ')}</h2><p class="muted" style="margin-top:-6px">${thDate(r.date)}</p><div id="replay" class="replay"></div></div><button class="btn sec full" data-act="hist">‹ กลับไปประวัติ</button>` : '';
     if (r) { UI.rp = { pid: 'p0', hole: 0 }; mountReplay(r.rp); } }
@@ -426,6 +432,8 @@ function rHome() {
     <div style="display:flex;gap:8px"><input id="jcode" maxlength="6" placeholder="รหัสแก๊ง" style="text-transform:uppercase;font-weight:700;letter-spacing:3px"><button class="btn" data-act="joincode" style="flex:none">เข้า</button></div></div>
   ${mg.length ? `<div class="card"><h2>🕘 แก๊งล่าสุดของฉัน</h2>${mg.map(g => `<div class="trow"><span><b>${esc(g.name)}</b><br><span class="muted">${thDate(g.date)} · ${g.code}</span></span><span style="display:flex;gap:6px"><button class="btn sec" data-act="open" data-v="${g.code}">เปิด</button><button class="x" data-act="forget" data-v="${g.code}">🗑</button></span></div>`).join('')}
     <button class="btn red full" data-act="forgetall">ลบรายการทั้งหมด</button></div>` : ''}
+  <div class="card"><h2>🏋️ ฝึกซ้อม & พัฒนาวงสวิง</h2><p class="muted" style="margin:-4px 0 8px">แผนซ้อมจากสกอร์ของคุณ · จดผลซ้อมไดรฟ์ · ระยะแต่ละไม้ · กล้องสโลว์ · จังหวะสวิง</p>
+    <button class="btn full big-btn" data-act="practice">🏋️ ไปซ้อม</button></div>
   <button class="btn sec full" data-act="hist">📚 ประวัติ & Handicap Index</button>
   <a class="btn sec full" href="golf-live-tutorial.mp4" target="_blank">▶️ วิดีโอแนะนำการใช้งาน</a>
   <div class="card" data-notr><h2>🌐 ภาษา / Language</h2><div class="seg"><button data-act="lang" data-v="th" class="${(PREF.lang || 'th') === 'th' ? 'on' : ''}">ไทย</button><button data-act="lang" data-v="en" class="${PREF.lang === 'en' ? 'on' : ''}">English</button></div></div>
@@ -913,7 +921,8 @@ function rGang() {
 /* ---------- history (เก็บในเครื่อง) ---------- */
 function saveRound() {
   const r = { rid: CODE, date: G.meta.date, course: G.meta.course, tee: G.meta.tee, holes: K.nHoles(G), cr: G.meta.cr, slope: G.meta.slope, par: K.totalPar(G),
-    players: K.players(G).map(p => { const s = K.stats(G, p.id); return { name: p.name.trim(), gross: s.gross, net: s.net, par: s.par, n: s.n, putts: s.putts, g: s.g, money: s.money, diff: s.n === K.nHoles(G) ? s.hcp : null }; }) };
+    players: K.players(G).map(p => { const s = K.stats(G, p.id), b = A.breakdown(G, p.id); return { name: p.name.trim(), gross: s.gross, net: s.net, par: s.par, n: s.n, putts: s.putts, g: s.g, money: s.money, diff: s.n === K.nHoles(G) ? s.hcp : null,
+      bk: { pen: b.pen, three: b.three, fwN: b.fwN, fwHit: b.fwHit, scrN: b.scrN, scrO: b.scrO } }; }) };
   const d = gameReplayData(), ix = {}; d.players.forEach((p, n) => { ix[p.id] = 'p' + n; });
   const rk = o => { const x = {}; Object.entries(o || {}).forEach(([k, v]) => { if (ix[k]) x[ix[k]] = v; }); return x; };
   r.rp = { N: d.N, holes: d.holes, pars: d.pars, si: d.si, putts: rk(d.putts), center: d.center, players: d.players.map(p => ({ id: ix[p.id], name: p.name, color: p.color })), shots: rk(d.shots), scores: rk(d.scores) };
@@ -999,6 +1008,7 @@ document.addEventListener('click', async e => {
     case 'joincode': { const c = document.getElementById('jcode').value.trim().toUpperCase(); if (c.length === 6) go(c); else toast('รหัสแก๊งมี 6 ตัว'); return; }
     case 'open': go(v); return;
     case 'hist': UI.view = 'hist'; render(); return;
+    case 'practice': UI.view = 'practice'; history.pushState({}, '', location.href); render(); scrollTo(0, 0); return;
     case 'histrp': UI.histRid = v; UI.view = 'histrp'; render(); scrollTo(0, 0); return;
     case 'forget': { const pend = Object.keys(jget(DEV, 'golf2_outbox_' + v, {})).length;
       if (!(await ask(pend ? `แก๊ง ${v} ยังมีข้อมูลรอส่ง ${pend} รายการ ลบออกจากเครื่องนี้เลยไหม?` : `ลบแก๊ง ${v} ออกจากรายการ?`))) return;
