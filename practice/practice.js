@@ -508,7 +508,11 @@ export function createPractice(root, ctx) {
     if (!t.ok) { el.innerHTML = `<div class="cn" style="background:#fff3e0;margin-top:0"><span>🤔</span><div><b>${ctx.tr('หาเส้นลูกไม่ได้')}</b><br><span class="muted">${ctx.tr(TR_WHY[t.why] || TR_WHY.track)}</span></div></div>${TR_TIPS}<button class="btn sec full" data-pa="trrun">${ctx.tr('🔁 ลองหาใหม่')}</button>`; return; }
     const e = t.est, sh = Tr.shapeOf(e, D.hand === 'L'), lr = x => ctx.tr(x < 0 ? 'ซ้าย' : 'ขวา');
     const out = Math.abs(e.dir) < 1 ? ctx.tr('ตรง') : lr(e.dir) + ' ' + Math.abs(e.dir).toFixed(0) + '°', land = Math.abs(e.side) < 2 ? ctx.tr('กลางแนวเป้า') : lr(e.side) + ' ' + toU(Math.abs(e.side)) + ' ' + ctx.tr(un());
-    el.innerHTML = `<div class="trst"><div><b>${Math.round(e.speed * 2.237)}</b><small>${ctx.tr('ความเร็วลูก')} (mph)</small></div><div><b>${toU(e.carry)}</b><small>${ctx.tr('ระยะลอย')} (${ctx.tr(un())})</small></div>
+    const bd = Tr.carryBand(e.carry, t.seen, t.own), r5 = x => Math.round(toU(x) / 5) * 5;
+    el.innerHTML = `<div class="trcarry"><small>${ctx.tr('ระยะลอย (carry) โดยประมาณ')}</small><b>~${toU(e.carry)} <span>${ctx.tr(un())}</span></b>
+        <div>${ctx.tr('น่าจะอยู่ในช่วง')} ${r5(bd.lo)}–${r5(bd.hi)} ${ctx.tr(un())}</div>
+        ${t.own ? `<p>${ctx.tr('ใช้ระยะเฉลี่ยของไม้นี้จากบันทึกซ้อมช่วยคำนวณ')}</p>` : `<p>${ctx.tr('แม่นขึ้นมาก (±10%) ถ้าจดระยะไม้นี้ในหน้า "ซ้อมไดรฟ์" อย่างน้อย 3 ลูก')}</p>`}</div>
+      <div class="trst"><div><b>${Math.round(e.speed * 2.237)}</b><small>${ctx.tr('ความเร็วลูก')} (mph)</small></div><div><b>${toU(e.carry)}</b><small>carry (${ctx.tr(un())})</small></div>
         <div><b>${toU(e.apex)}</b><small>${ctx.tr('สูงสุด')} (${ctx.tr(un())})</small></div><div><b>${e.launch.toFixed(0)}°</b><small>${ctx.tr('มุมออก')}</small></div></div>
       <div class="cn"><span>↪️</span><div><b>${ctx.tr(sh.name)}</b> · ${ctx.tr('ออก')}${out} · ${ctx.tr('ตก')}${land}<br><span class="muted">${ctx.tr('ค่าประมาณจากกล้องมือถือ · เห็นลูกจริง')} ${t.seen.toFixed(2)} ${ctx.tr('วิแรก ที่เหลือคำนวณจากฟิสิกส์ลูกกอล์ฟ')}</span></div></div>
       <div class="grid2"><button class="btn sec" data-pa="trshow">${ctx.tr(V.trOff ? '👁 แสดงเส้น' : '🙈 ซ่อนเส้น')}</button><button class="btn sec" data-pa="trrun">${ctx.tr('🔁 หาใหม่')}</button></div>
@@ -530,7 +534,7 @@ export function createPractice(root, ctx) {
     if (t < end) { g.shadowBlur = 12 * k; g.fillStyle = '#fff'; g.beginPath(); g.arc(h[0], h[1], Math.max(2, wd(h[2]) * 0.9), 0, 7); g.fill(); }
     else if (m) { // ตกแล้ว: จุดตก + กล่องตัวเลขแบบทีวี
       g.shadowBlur = 0; g.strokeStyle = '#fff'; g.lineWidth = 1.5 * k; g.beginPath(); g.ellipse(h[0], h[1], 7 * k, 3 * k, 0, 0, 7); g.stroke();
-      const e = tr.est, lines = [[ctx.tr('ความเร็วลูก'), Math.round(e.speed * 2.237) + ' MPH'], [ctx.tr('ระยะลอย'), toU(e.carry) + ' ' + (yd() ? 'YD' : 'M')]];
+      const e = tr.est, lines = [[ctx.tr('ความเร็วลูก'), Math.round(e.speed * 2.237) + ' MPH'], ['CARRY', '~' + toU(e.carry) + ' ' + (yd() ? 'YD' : 'M')]];
       g.font = `600 ${Math.round(13 * k)}px system-ui,sans-serif`; const bw = 150 * k, bh = 26 * k * lines.length + 8 * k, bx = R.x + R.w / 2 - bw / 2, by = R.y + R.h - bh - 14 * k;
       g.fillStyle = 'rgba(10,20,15,0.82)'; g.fillRect(bx, by, bw, bh); g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = k; g.strokeRect(bx, by, bw, bh);
       lines.forEach(([a, b], i) => { const y = by + 4 * k + 26 * k * i + 18 * k; g.fillStyle = '#cfd8dc'; g.textAlign = 'left'; g.fillText(a, bx + 8 * k, y); g.fillStyle = '#fff'; g.font = `700 ${Math.round(16 * k)}px system-ui,sans-serif`; g.textAlign = 'right'; g.fillText(b, bx + bw - 8 * k, y); g.font = `600 ${Math.round(13 * k)}px system-ui,sans-serif`; });
@@ -573,14 +577,14 @@ export function createPractice(root, ctx) {
           const gr = await grab(c); if (prev && times[k] > -0.16 && sameFrame(prev, gr)) continue;   // เฟรมซ้ำ (คลิป 30 fps แต่ดึงทุก 1/60 วิ)
           frames.push({ g: gr, W, H, t: times[k] }); prev = gr; if (k % 4 === 0) prog(0.25 + 0.65 * k / times.length, 'กำลังตามลูก...'); }
         prog(0.93, 'กำลังคำนวณวิถีลูก...'); await new Promise(r => setTimeout(r, 30));
-        const r = Tr.analyze(frames, { club: m.club, carry: userCarry(m.club) }); r.imp = imp + (r.ti || 0) * slow; return r; };
+        const own = userCarry(m.club), r = Tr.analyze(frames, { club: m.club, carry: own }); r.imp = imp + (r.ti || 0) * slow; r.own = own != null; return r; };
       let imp = m.tags?.imp;
       if (imp != null) res = await fine(imp);
       if (alive() && (imp == null || (res && !res.ok && res.why !== 'fit'))) { const ci = await coarse(); if (ci != null && (imp == null || Math.abs(ci - imp) > 0.05 * slow)) res = await fine(ci); else if (!res) res = { ok: false, why: 'ball' }; }
     } catch (e) { res = { ok: false, why: 'clip' }; }
     L0.trBusy = false; vid.removeAttribute('src'); vid.load?.();
     if (!res || !alive()) return;
-    const keep = res.ok ? { ok: true, imp: res.imp, est: res.est, path: res.path, track: res.track, seen: res.seen, n: res.n, rms: +res.rms.toFixed(2), club: m.club, at: Date.now() } : { ok: false, why: res.why, at: Date.now() };
+    const keep = res.ok ? { ok: true, imp: res.imp, est: res.est, path: res.path, track: res.track, seen: res.seen, n: res.n, rms: +res.rms.toFixed(2), club: m.club, own: !!res.own, at: Date.now() } : { ok: false, why: res.why, at: Date.now() };
     await updM(x => { x.trace = keep; }); trBody(); paint(live.v, root.querySelector('#ov'), m.draw);
     if (keep.ok) { toast(ctx.tr('🎯 เจอเส้นลูกแล้ว · กด ▶️ ดู')); if (force !== false) { live.v.currentTime = Math.max(0, keep.imp - 0.4 * (m.slow || 1)); } }
   }

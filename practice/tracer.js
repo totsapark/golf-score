@@ -326,6 +326,13 @@ export function analyze(frames, o = {}) {
   };
 }
 
+// ช่วงระยะลอย (carry) ที่น่าจะเป็น: กว้างตามเวลาที่กล้องเห็นลูกจริง · แคบลงมากถ้ามีระยะของไม้นี้จากบันทึกซ้อม
+// (วัดจากคลิปจำลองที่ไม่ได้ใช้ปรับค่า: ค่าคลาด 80% ของคลิปอยู่ในช่วงนี้)
+export function carryBand(carry, seen, own) {
+  const pct = own ? (seen < 0.35 ? 0.13 : 0.11) : seen < 0.1 ? 0.4 : seen < 0.35 ? 0.3 : 0.19;
+  return { lo: carry * (1 - pct), hi: carry * (1 + pct), pct, sure: pct <= 0.2 };
+}
+
 // รูปทรงลูก (ถนัดขวา): ทิศออก + ความโค้ง → ชื่อเรียก
 export function shapeOf(est, lefty) {
   const s = lefty ? -1 : 1, d = est.dir * s, curve = (est.side - Math.tan(est.dir * D2R) * est.carry) * s;

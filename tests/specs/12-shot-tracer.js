@@ -12,6 +12,8 @@ module.exports = async t => {
   t.ok('ball flight matches tour averages (carry within 6%, apex within 2.5 m)', phys.every(p => Math.abs(p.carry) < 0.06 && Math.abs(p.apex) < 2.5), phys);
   const fade = Tr.simulate({ v0: 59, la: 12, spin: 3000, dir: 0, tilt: 12 }), draw = Tr.simulate({ v0: 59, la: 12, spin: 3000, dir: 0, tilt: -12 });
   t.ok('spin axis tilt curves the ball (+ right, − left)', fade.side > 8 && draw.side < -8, [fade.side, draw.side]);
+  const b1 = Tr.carryBand(150, 0.5, false), b2 = Tr.carryBand(150, 0.08, false), b3 = Tr.carryBand(150, 0.08, true);
+  t.ok('carry range: wider when the ball was seen briefly, narrow with own club distances', b1.hi - b1.lo < b2.hi - b2.lo && b3.hi - b3.lo < b1.hi - b1.lo && b1.lo < 150 && b1.hi > 150);
   t.ok('shot shape names', Tr.shapeOf({ dir: 0, side: 0, carry: 150 }).name === 'ตรง' && Tr.shapeOf({ dir: 0, side: 12, carry: 150 }).name.includes('เฟด') && Tr.shapeOf({ dir: 0, side: -30, carry: 150 }).name.includes('ฮุก')
     && Tr.shapeOf({ dir: 0, side: 12, carry: 150 }, true).name.includes('ดรอว์'));
 
@@ -61,6 +63,8 @@ module.exports = async t => {
   t.ok('tracer starts by itself with a progress bar (no tapping on the ball)', !!(await p.$('#trbody .trbar')) || !!(await p.$('#trbody .trst')));
   await p.waitForFunction(() => document.querySelector('#trbody .trst') || document.querySelector('#trbody [data-pa=trrun]'), null, { timeout: 120000 }).catch(() => {});
   const st = await p.$$eval('#trbody .trst b', a => a.map(e => e.textContent)).catch(() => []);
+  const ct = await p.textContent('#trbody .trcarry').catch(() => '');
+  t.ok('carry estimate shown big with a likely range', /~\d+/.test(ct) && /\d+–\d+/.test(ct) && ct.includes('ซ้อมไดรฟ์'), ct);
   t.ok('finds the shot: ball speed, carry, apex, launch shown', st.length === 4 && +st[0] > 50 && +st[1] > 60, [st, await p.textContent('#trbody').catch(() => '')]);
   const meta = await p.evaluate(() => new Promise(res => { const r = indexedDB.open('golfpractice-swings', 1); r.onsuccess = () => { const q = r.result.transaction('meta').objectStore('meta').getAll(); q.onsuccess = () => res(q.result[0]); }; }));
   t.ok('trace saved with the clip (path + estimate, view switched to down-the-line)', meta?.view === 'dtl' && meta?.trace?.ok && meta.trace.path.length > 20 && meta.trace.est.carry > 0, meta?.trace && { ok: meta.trace.ok, n: meta.trace.n, why: meta.trace.why });
