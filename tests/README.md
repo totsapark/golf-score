@@ -25,6 +25,9 @@ node run.js hazards    # only specs whose file name contains "hazards"
 | `08-analysis` | strokes-lost breakdown, HCP level per area, running score, drive dispersion from GPS, multi-round trend |
 | `10-practice` | practice app (`/practice/`, separate from Golf Live): round log → plan, range-log stats, club gaps, wedge matrix, practice plan from history, setup card, tempo trainer, swing camera with a fake device (record, tag tempo, draw, star, compare) |
 | `11-live-setup` | practice app live setup check: ball + feet found on synthetic top-down scenes (white shoe not mistaken for the ball), green/yellow/red, cm to move, stance width; live screen end-to-end with a fake camera video |
+| `12-shot-tracer` | practice app Shot Tracer: ball-flight physics vs tour launch-monitor averages, ball found + tracked + fitted on 40 synthetic down-the-line clips (`synth-shot.mjs`), no tracer on a missed swing, impact found without audio; swing screen end-to-end (import a ×4 slow-motion clip → traces by itself → red line drawn → hide/show → export a video with the line burned in) |
+
+Synthetic clips: `synth-shot.mjs` renders down-the-line shots (sky/trees/grass, a swinging golfer and club, birds, people walking, a ball from the next bay, noise, motion blur) with its own ball physics and a random camera the tracker doesn't know. `node bench-tracer.mjs [count] [firstSeed] [-v]` scores the tracker on them (seeds 1–100 were used for tuning; report on others).
 
 `07-db-rules` needs Java and the Realtime Database emulator jar
 (`npx firebase-tools setup:emulators:database`); it is skipped when either is missing.

@@ -2,6 +2,7 @@
 // ข้อมูลทั้งหมดอยู่ในเครื่องนี้ (localStorage + IndexedDB สำหรับคลิป) ไม่ส่งขึ้นเซิร์ฟเวอร์
 import * as P from './core.js';
 import * as Vi from './vision.js';
+import * as Tr from './tracer.js';
 
 const LS = 'golfpractice', DAY = 864e5, FRAME = 1 / 30;
 const load = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch (e) { return {}; } };
@@ -336,7 +337,8 @@ export function createPractice(root, ctx) {
       <li><b>ด้านหน้า (face-on)</b> · <span>ตรงกลางลำตัว ห่าง 3 เมตร สูงระดับมือ — ดูตำแหน่งลูก การย้ายน้ำหนัก หัวนิ่งไหม</span></li>
       <li><b>ด้านหลัง (down-the-line)</b> · <span>ด้านหลังมือ เล็งขนานแนวเป้า — ดูระนาบวงสวิง แนวไหล่/เท้า มุมก้ม</span></li>
       <li><span>พิงกับถุงกอล์ฟหรือใช้ขาตั้ง ให้เห็นทั้งตัวและหัวไม้ตลอดวง</span></li>
-      <li><span>อยากได้สโลว์ชัดกว่า: อัดด้วยกล้องสโลว์โมชันของมือถือ แล้วกด "นำเข้าคลิป"</span></li></ul></div>
+      <li><span>อยากได้สโลว์ชัดกว่า: อัดด้วยกล้องสโลว์โมชันของมือถือ แล้วกด "นำเข้าคลิป"</span></li>
+      <li><b>🎯 อยากได้เส้นลูก</b> · <span>เลือก "ด้านหลัง" ถือแนวตั้ง ให้ลูกอยู่ส่วนล่าง ~1/4 ของจอ เห็นฟ้าเยอะๆ · แอปหาลูกและวาดเส้นให้เองหลังอัด</span></li></ul></div>
     <div class="grid2"><button class="btn sec" data-pa="go" data-v="swings">📼 คลิปของฉัน</button><button class="btn sec" data-pa="go" data-v="menu">‹ กลับ</button></div>`;
   }
   function drawGrid(cv, on) {
@@ -417,7 +419,7 @@ export function createPractice(root, ctx) {
     const sh = L.filter(m => !f || m.club === f), mb = Math.round(L.reduce((s, m) => s + (m.size || 0), 0) / 1e6);
     el.className = ''; el.innerHTML = `<div class="chips" style="padding:0 0 8px"><button style="width:auto;padding:0 12px;border-radius:16px" class="${!f ? 'cur' : ''}" data-pa="swf" data-v="">ทั้งหมด</button>${clubs.map(c => `<button style="width:auto;padding:0 12px;border-radius:16px" class="${c === f ? 'cur' : ''}" data-pa="swf" data-v="${c}" data-notr>${c}</button>`).join('')}</div>
       <div class="swgrid">${sh.map(m => { const tp = P.tempoOf(m.tags, m.slow); return `<button class="swc" data-pa="openswing" data-v="${m.id}">${m.thumb ? `<img src="${m.thumb}" alt="">` : '<div class="nothumb">🎥</div>'}
-        <span><b data-notr>${m.club}</b>${m.star ? ' ⭐' : ''}<br><small>${fmtD(m.t)}${tp ? ' · ' + tp.ratio.toFixed(1) + ':1' : ''}</small></span></button>`; }).join('')}</div>
+        <span><b data-notr>${m.club}</b>${m.star ? ' ⭐' : ''}<br><small>${fmtD(m.t)}${tp ? ' · ' + tp.ratio.toFixed(1) + ':1' : ''}${m.trace?.ok ? ' · 🎯 ' + toU(m.trace.est.carry) : ''}</small></span></button>`; }).join('')}</div>
       <p class="muted" style="font-size:12px;margin:8px 0 0">${L.length} <span>คลิป</span> · ${mb} MB <span>ในเครื่องนี้</span></p>`;
   }
 
@@ -429,6 +431,7 @@ export function createPractice(root, ctx) {
       <input class="rng" type="range" id="scrub" min="0" max="1000" value="0" step="1">
       <div class="vctl"><button data-pa="step" data-v="-1">⏮</button><button data-pa="play" id="playb">▶️</button><button data-pa="step" data-v="1">⏭</button><span id="tnow">0.00</span></div>
       <div class="seg">${[[1, '1×'], [0.5, '½'], [0.25, '¼'], [0.125, '⅛']].map(([v, l]) => `<button data-pa="speed" data-v="${v}" class="${V.speed === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="card"><h2>🎯 เส้นลูก (Shot Tracer)</h2><div id="trbody" class="muted">กำลังโหลด...</div></div>
     <div class="card"><h2>🏷️ ติดป้ายตำแหน่ง (ที่เฟรมปัจจุบัน)</h2><div class="grid4 tagb">${TAGS.map(([k, l]) => `<div><button data-pa="tag" data-v="${k}">${l}</button><button class="tj" data-pa="jump" data-v="${k}" id="tg_${k}">–</button></div>`).join('')}</div>
       <p class="muted" style="font-size:12px;margin:6px 0 0">หยุดภาพที่ตำแหน่งนั้นแล้วกดป้าย · กดเวลาใต้ป้ายเพื่อกลับไปเฟรมนั้น</p><div id="tempo"></div></div>
     <div class="card"><h2>✏️ วาดเส้นเช็คท่า</h2><div class="seg">${[['view', '✋ ดู'], ['line', '／ เส้น'], ['circle', '◯ วงกลม']].map(([v, l]) => `<button data-pa="tool" data-v="${v}" class="${V.tool === v ? 'on' : ''}">${l}</button>`).join('')}<button data-pa="clrdraw">🗑 ล้าง</button></div>
@@ -439,20 +442,22 @@ export function createPractice(root, ctx) {
     <button class="btn full" data-pa="cmp">🆚 เทียบกับวงอื่น</button>
     <div class="grid2"><button class="btn sec" data-pa="go" data-v="swings">📼 คลิปทั้งหมด</button><button class="btn sec" data-pa="go" data-v="cam">🎥 อัดต่อ</button></div>`;
   }
-  async function loadVid(v, blob) {
-    v.src = url(blob);
+  async function loadVid(v, blob, src) {
+    v.src = src || url(blob);
     await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('video')); setTimeout(res, 6000); });
     if (!isFinite(v.duration)) await new Promise(res => { const h = () => { if (isFinite(v.duration)) { v.removeEventListener('durationchange', h); res(); } }; v.addEventListener('durationchange', h); v.currentTime = 1e101; setTimeout(res, 3000); });
     v.currentTime = 0.001;
   }
   const dur = v => isFinite(v.duration) ? v.duration : 0;
   function contentRect(v, cv) { const W = cv.width, H = cv.height, vw = v.videoWidth || 9, vh = v.videoHeight || 16, s = Math.min(W / vw, H / vh); return { x: (W - vw * s) / 2, y: (H - vh * s) / 2, w: vw * s, h: vh * s }; }
-  function paint(v, cv, shapes, tmp) {
+  function paint(v, cv, shapes, tmp, tOver) {
     const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1; if (cv.width !== Math.round(r.width * dpr)) { cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); }
     const g = cv.getContext('2d'), R = contentRect(v, cv), P2 = p => [R.x + p[0] * R.w, R.y + p[1] * R.h];
     g.clearRect(0, 0, cv.width, cv.height); g.lineWidth = 3 * dpr; g.strokeStyle = '#ffeb3b'; g.shadowColor = '#000'; g.shadowBlur = 3 * dpr;
     [...(shapes || []), ...(tmp ? [tmp] : [])].forEach(s => { const a = P2(s.a), b = P2(s.b); g.beginPath();
       if (s.t === 'line') { g.moveTo(...a); g.lineTo(...b); } else g.arc(a[0], a[1], Math.hypot(b[0] - a[0], b[1] - a[1]), 0, 7); g.stroke(); });
+    const m = live.m; g.shadowBlur = 0;
+    if (cv.id === 'ov' && m?.trace?.ok && !V.trOff) drawTrace(g, R, m.trace, tOver ?? (v.currentTime - m.trace.imp) / (m.slow || 1), R.h / 560, m);
   }
   async function mountSwing() {
     const m = await SW.get(V.swId).catch(() => null); if (V.page !== 'swing') return;
@@ -465,10 +470,10 @@ export function createPractice(root, ctx) {
     live.v = v; v.playbackRate = V.speed;
     const sync = () => { const d = dur(v); if (d) sc.value = Math.round(v.currentTime / d * 1000); const tn = root.querySelector('#tnow'); if (tn) tn.textContent = v.currentTime.toFixed(2); paint(v, cv, m.draw); };
     v.addEventListener('timeupdate', sync); v.addEventListener('seeked', sync); v.addEventListener('loadeddata', sync);
-    v.addEventListener('play', () => { root.querySelector('#playb').textContent = '⏸'; const f = () => { sync(); live.raf = requestAnimationFrame(f); }; f(); });
+    v.addEventListener('play', () => { stopOver(); root.querySelector('#playb').textContent = '⏸'; const f = () => { sync(); live.raf = requestAnimationFrame(f); }; f(); });
     v.addEventListener('pause', () => { root.querySelector('#playb').textContent = '▶️'; cancelAnimationFrame(live.raf); sync(); });
-    v.addEventListener('ended', () => { root.querySelector('#playb').textContent = '▶️'; });
-    sc.addEventListener('input', () => { v.pause(); v.currentTime = sc.value / 1000 * dur(v); });
+    v.addEventListener('ended', () => { root.querySelector('#playb').textContent = '▶️'; overtime(); });
+    sc.addEventListener('input', () => { stopOver(); v.pause(); v.currentTime = sc.value / 1000 * dur(v); });
     // วาดเส้น
     let st = null; const pt = e => { const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1, R = contentRect(v, cv); return [((e.clientX - r.left) * dpr - R.x) / R.w, ((e.clientY - r.top) * dpr - R.y) / R.h]; };
     cv.addEventListener('pointerdown', e => { if (V.tool === 'view') return; e.preventDefault(); cv.setPointerCapture(e.pointerId); const p = pt(e); st = { t: V.tool, a: p, b: p }; });
@@ -476,6 +481,7 @@ export function createPractice(root, ctx) {
     cv.addEventListener('pointerup', () => { if (!st) return; const s = st; st = null; if (Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) > 0.02) { m.draw = [...(m.draw || []), s]; SW.put(m); } paint(v, cv, m.draw); });
     cv.style.pointerEvents = V.tool === 'view' ? 'none' : 'auto';
     showTags(); sync();
+    trBody(); if (m.view === 'dtl' && !m.trace) runTrace();
   }
   function showTags() {
     const m = live.m; if (!m) return;
@@ -487,6 +493,124 @@ export function createPractice(root, ctx) {
       <span class="muted">${ctx.tr(ok ? 'อยู่ในช่วงดี (ประมาณ 3:1 เหมือนโปร)' : tp.ratio < 2.5 ? 'ขึ้นไม้เร็วเกินไปเทียบกับลง · ลองขึ้นให้ช้าลง' : 'ลงช้าเทียบกับขึ้น · อาจผ่อนแรงตอนลง')} · ${ctx.tr('เสียงนำที่ใกล้เคียง')}: ${nt[0]}/${nt[1]}</span></div></div>`;
   }
   async function updM(fn) { const m = live.m; if (!m) return; fn(m); await SW.put(m); }
+
+  /* ---------- เส้นลูก (Shot Tracer): หาลูก → ตามลูก → ฟิตวิถีตามฟิสิกส์ → วาดเส้นแดงทับคลิป (อัตโนมัติ ไม่ต้องแตะ) ---------- */
+  const TR_WHY = { clip: 'คลิปต้องมีช่วงก่อนตีอย่างน้อย ~0.6 วิ และหลังตีอย่างน้อย ~1 วิ', ball: 'หาลูกที่ตั้งไม่เจอ · ให้เห็นลูกชัด ไม่โดนตัวหรือไม้บัง กล้องห่างลูก 2–4 ม.',
+    track: 'ตามลูกที่บินออกไปไม่ได้ · ฉากหลังควรเป็นฟ้าหรือต้นไม้ ไม่มีคนเดินผ่าน ใช้ 60 fps หรือสโลว์โมชัน', fit: 'เห็นลูกสั้นเกินไป · ถอยกล้องให้เห็นฟ้าเยอะขึ้น ถือแนวตั้ง ให้ลูกอยู่ส่วนล่างของจอ' };
+  const TR_TIPS = `<ul class="plist" style="margin-top:6px"><li><span>ตั้งมือถือด้านหลังผู้ตี เล็งไปทางเป้า (ปุ่ม "ด้านหลัง" ตอนอัด)</span></li><li><span>ถือแนวตั้ง ลูกอยู่ส่วนล่าง ~1/4 ของจอ เห็นฟ้าเยอะๆ</span></li><li><span>ขาตั้งหรือพิงถุงกอล์ฟให้นิ่ง ห่างลูก 2–4 ม. สูงราวเอว</span></li><li><span>สโลว์โมชัน (120/240 fps) ตามลูกได้ไกลกว่า · นำเข้าแล้วเลือก "คลิปสโลว์โมชัน"</span></li></ul>`;
+  function userCarry(club) { const r = P.bagTable(D.balls, D.bag).find(x => x.c === club); return r && r.s.nd >= 3 ? r.s.carry : null; }
+  function trBody() {
+    const m = live.m, el = root.querySelector('#trbody'); if (!m || !el || live.trBusy) return;
+    el.className = '';
+    if (m.view !== 'dtl') { el.innerHTML = `<p class="muted" style="margin:0 0 8px">${ctx.tr('เส้นลูกใช้กับคลิปที่ถ่ายจากด้านหลังผู้ตี (down-the-line) เล็งไปทางเป้า')}</p><button class="btn full" data-pa="trdtl">${ctx.tr('🎯 คลิปนี้ถ่ายจากด้านหลัง · หาเส้นลูก')}</button>`; return; }
+    const t = m.trace;
+    if (!t) { el.innerHTML = `<button class="btn full" data-pa="trrun">${ctx.tr('🎯 หาเส้นลูก')}</button>`; return; }
+    if (!t.ok) { el.innerHTML = `<div class="cn" style="background:#fff3e0;margin-top:0"><span>🤔</span><div><b>${ctx.tr('หาเส้นลูกไม่ได้')}</b><br><span class="muted">${ctx.tr(TR_WHY[t.why] || TR_WHY.track)}</span></div></div>${TR_TIPS}<button class="btn sec full" data-pa="trrun">${ctx.tr('🔁 ลองหาใหม่')}</button>`; return; }
+    const e = t.est, sh = Tr.shapeOf(e, D.hand === 'L'), lr = x => ctx.tr(x < 0 ? 'ซ้าย' : 'ขวา');
+    const out = Math.abs(e.dir) < 1 ? ctx.tr('ตรง') : lr(e.dir) + ' ' + Math.abs(e.dir).toFixed(0) + '°', land = Math.abs(e.side) < 2 ? ctx.tr('กลางแนวเป้า') : lr(e.side) + ' ' + toU(Math.abs(e.side)) + ' ' + ctx.tr(un());
+    el.innerHTML = `<div class="trst"><div><b>${Math.round(e.speed * 2.237)}</b><small>${ctx.tr('ความเร็วลูก')} (mph)</small></div><div><b>${toU(e.carry)}</b><small>${ctx.tr('ระยะลอย')} (${ctx.tr(un())})</small></div>
+        <div><b>${toU(e.apex)}</b><small>${ctx.tr('สูงสุด')} (${ctx.tr(un())})</small></div><div><b>${e.launch.toFixed(0)}°</b><small>${ctx.tr('มุมออก')}</small></div></div>
+      <div class="cn"><span>↪️</span><div><b>${ctx.tr(sh.name)}</b> · ${ctx.tr('ออก')}${out} · ${ctx.tr('ตก')}${land}<br><span class="muted">${ctx.tr('ค่าประมาณจากกล้องมือถือ · เห็นลูกจริง')} ${t.seen.toFixed(2)} ${ctx.tr('วิแรก ที่เหลือคำนวณจากฟิสิกส์ลูกกอล์ฟ')}</span></div></div>
+      <div class="grid2"><button class="btn sec" data-pa="trshow">${ctx.tr(V.trOff ? '👁 แสดงเส้น' : '🙈 ซ่อนเส้น')}</button><button class="btn sec" data-pa="trrun">${ctx.tr('🔁 หาใหม่')}</button></div>
+      <button class="btn full" data-pa="trexp" style="margin-top:8px" id="trexp">${ctx.tr('💾 บันทึกคลิปพร้อมเส้น')}</button>`;
+  }
+  // วาดเส้น: เรืองแสงสีแดง บางลงตามระยะ · หัวเส้นเป็นจุดสว่างตอนลูกยังบิน · ลูกตกแล้วแสดงกล่องตัวเลข
+  function drawTrace(g, R, tr, t, k, m) {
+    const P = tr.path; if (t < 0 || !P?.length) return;
+    const pts = []; for (let i = 0; i < P.length; i++) { const p = P[i];
+      if (p.t > t) { const q = P[i - 1]; if (q) { const f = (t - q.t) / ((p.t - q.t) || 1); pts.push([R.x + (q.x + (p.x - q.x) * f) * R.w, R.y + (q.y + (p.y - q.y) * f) * R.h, q.z + (p.z - q.z) * f]); } break; }
+      pts.push([R.x + p.x * R.w, R.y + p.y * R.h, p.z]); }
+    if (pts.length < 2) return;
+    const end = P[P.length - 1].t, wd = z => Math.max(1.3, Math.min(6, 26 / Math.max(1, z))) * k;
+    g.save(); g.lineCap = 'round'; g.lineJoin = 'round';
+    const stroke = (col, mul, blur) => { g.strokeStyle = col; g.shadowColor = '#ff1a1a'; g.shadowBlur = blur * k;
+      for (let i = 0; i < pts.length - 1; i += 6) { const j = Math.min(pts.length - 1, i + 6); g.lineWidth = wd(pts[Math.floor((i + j) / 2)][2]) * mul; g.beginPath(); g.moveTo(pts[i][0], pts[i][1]); for (let q = i + 1; q <= j; q++) g.lineTo(pts[q][0], pts[q][1]); g.stroke(); } };
+    stroke('rgba(255,40,40,0.35)', 2.6, 14); stroke('#ff2d2d', 1, 6); stroke('rgba(255,220,220,0.9)', 0.35, 0);
+    const h = pts[pts.length - 1];
+    if (t < end) { g.shadowBlur = 12 * k; g.fillStyle = '#fff'; g.beginPath(); g.arc(h[0], h[1], Math.max(2, wd(h[2]) * 0.9), 0, 7); g.fill(); }
+    else if (m) { // ตกแล้ว: จุดตก + กล่องตัวเลขแบบทีวี
+      g.shadowBlur = 0; g.strokeStyle = '#fff'; g.lineWidth = 1.5 * k; g.beginPath(); g.ellipse(h[0], h[1], 7 * k, 3 * k, 0, 0, 7); g.stroke();
+      const e = tr.est, lines = [[ctx.tr('ความเร็วลูก'), Math.round(e.speed * 2.237) + ' MPH'], [ctx.tr('ระยะลอย'), toU(e.carry) + ' ' + (yd() ? 'YD' : 'M')]];
+      g.font = `600 ${Math.round(13 * k)}px system-ui,sans-serif`; const bw = 150 * k, bh = 26 * k * lines.length + 8 * k, bx = R.x + R.w / 2 - bw / 2, by = R.y + R.h - bh - 14 * k;
+      g.fillStyle = 'rgba(10,20,15,0.82)'; g.fillRect(bx, by, bw, bh); g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = k; g.strokeRect(bx, by, bw, bh);
+      lines.forEach(([a, b], i) => { const y = by + 4 * k + 26 * k * i + 18 * k; g.fillStyle = '#cfd8dc'; g.textAlign = 'left'; g.fillText(a, bx + 8 * k, y); g.fillStyle = '#fff'; g.font = `700 ${Math.round(16 * k)}px system-ui,sans-serif`; g.textAlign = 'right'; g.fillText(b, bx + bw - 8 * k, y); g.font = `600 ${Math.round(13 * k)}px system-ui,sans-serif`; });
+    }
+    g.restore();
+  }
+  // คลิปจบก่อนลูกตก: ค้างภาพสุดท้ายแล้ววาดเส้นต่อจนลูกตก
+  function stopOver() { if (live.ot) { cancelAnimationFrame(live.ot); live.ot = 0; } }
+  function overtime() {
+    const v = live.v, m = live.m, cv = root.querySelector('#ov'); if (!v || !m?.trace?.ok || V.trOff || !cv) return;
+    const end = m.trace.path[m.trace.path.length - 1].t, t0 = (dur(v) - m.trace.imp) / (m.slow || 1); if (t0 >= end + 0.4) return;
+    let last = performance.now(), t = t0; stopOver();
+    const f = now => { t += (now - last) / 1000 * V.speed; last = now; paint(v, cv, m.draw, null, t); if (t < end + 0.4) live.ot = requestAnimationFrame(f); else live.ot = 0; };
+    live.ot = requestAnimationFrame(f);
+  }
+  const sameFrame = (a, b) => { let s = 0; for (let i = 0; i < 3000; i++) { const q = (i * 7919) % a.length; s += Math.abs(a[q] - b[q]); } return s / 3000 < 0.6; };
+  async function runTrace(force) {
+    const m = live.m, v0 = live.v; if (!m || !v0 || live.trBusy) return;
+    const L0 = live, alive = () => live === L0 && V.page === 'swing', el = root.querySelector('#trbody');
+    L0.trBusy = true; stopOver();
+    const prog = (p, msg) => { if (el && alive()) { el.className = ''; el.innerHTML = `<p class="muted" style="margin:0 0 6px">${ctx.tr(msg)}</p><div class="trbar"><i style="width:${Math.round(p * 100)}%"></i></div>`; } };
+    prog(0.02, 'กำลังเตรียม...');
+    const vid = document.createElement('video'); vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+    let res;
+    try {
+      await loadVid(vid, null, v0.src);
+      const d = dur(vid), slow = m.slow || 1, Wv = vid.videoWidth, Hv = vid.videoHeight; if (!d || !Wv) throw new Error('video');
+      const s = 480 / Math.max(Wv, Hv), W = Math.round(Wv * s), H = Math.round(Hv * s), cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const g = cv.getContext('2d', { willReadFrequently: true });
+      const grab = async t => { vid.currentTime = Math.max(0, Math.min(d - 0.001, t)); await new Promise(r => { let ok = false; const h = () => { if (ok) return; ok = true; vid.removeEventListener('seeked', h); r(); }; vid.addEventListener('seeked', h); setTimeout(h, 2000); });
+        g.drawImage(vid, 0, 0, W, H); return Tr.toGray(g.getImageData(0, 0, W, H).data, W, H); };
+      const coarse = async () => { const N = Math.min(70, Math.max(12, Math.ceil(d * 14))), cf = [];
+        for (let k = 0; k < N; k++) { if (!alive()) return null; cf.push({ g: await grab(d * k / (N - 1)), W, H, t: d * k / (N - 1) }); prog(0.04 + 0.2 * k / N, 'กำลังหาจังหวะตีลูก...'); }
+        return Tr.coarseImpact(cf); };
+      const fine = async imp => {
+        const times = []; for (let r = -0.6; r < -0.16; r += 0.05) times.push(r);
+        const dtc = slow > 1 ? Math.max(1 / 30, slow / 120) : 1 / 60; for (let c = imp - 0.16 * slow; c <= imp + 1.6 * slow; c += dtc) times.push((c - imp) / slow);
+        const frames = []; let prev = null;
+        for (let k = 0; k < times.length; k++) { if (!alive()) return null; const c = imp + times[k] * slow; if (c < 0 || c > d) continue;
+          const gr = await grab(c); if (prev && times[k] > -0.16 && sameFrame(prev, gr)) continue;   // เฟรมซ้ำ (คลิป 30 fps แต่ดึงทุก 1/60 วิ)
+          frames.push({ g: gr, W, H, t: times[k] }); prev = gr; if (k % 4 === 0) prog(0.25 + 0.65 * k / times.length, 'กำลังตามลูก...'); }
+        prog(0.93, 'กำลังคำนวณวิถีลูก...'); await new Promise(r => setTimeout(r, 30));
+        const r = Tr.analyze(frames, { club: m.club, carry: userCarry(m.club) }); r.imp = imp + (r.ti || 0) * slow; return r; };
+      let imp = m.tags?.imp;
+      if (imp != null) res = await fine(imp);
+      if (alive() && (imp == null || (res && !res.ok && res.why !== 'fit'))) { const ci = await coarse(); if (ci != null && (imp == null || Math.abs(ci - imp) > 0.05 * slow)) res = await fine(ci); else if (!res) res = { ok: false, why: 'ball' }; }
+    } catch (e) { res = { ok: false, why: 'clip' }; }
+    L0.trBusy = false; vid.removeAttribute('src'); vid.load?.();
+    if (!res || !alive()) return;
+    const keep = res.ok ? { ok: true, imp: res.imp, est: res.est, path: res.path, track: res.track, seen: res.seen, n: res.n, rms: +res.rms.toFixed(2), club: m.club, at: Date.now() } : { ok: false, why: res.why, at: Date.now() };
+    await updM(x => { x.trace = keep; }); trBody(); paint(live.v, root.querySelector('#ov'), m.draw);
+    if (keep.ok) { toast(ctx.tr('🎯 เจอเส้นลูกแล้ว · กด ▶️ ดู')); if (force !== false) { live.v.currentTime = Math.max(0, keep.imp - 0.4 * (m.slow || 1)); } }
+  }
+  // บันทึกคลิปใหม่ที่มีเส้นลูกฝังอยู่ (เล่นคลิป 1 รอบแล้วอัดจาก canvas)
+  async function exportTrace() {
+    const m = live.m, v0 = live.v, tr = m?.trace; if (!tr?.ok || !v0 || live.exp) return;
+    const Rc = window.MediaRecorder, mime = pickMime(); if (!Rc || !HTMLCanvasElement.prototype.captureStream) return toast('เบราว์เซอร์นี้บันทึกวิดีโอไม่ได้');
+    const L0 = live, b = root.querySelector('#trexp'); L0.exp = true; if (b) { b.disabled = true; b.textContent = ctx.tr('⏺ กำลังบันทึก... (เล่นคลิป 1 รอบ)'); }
+    const vid = document.createElement('video'); vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+    try {
+      await loadVid(vid, null, v0.src); const d = dur(vid), slow = m.slow || 1, sc = Math.min(1, 1080 / Math.max(vid.videoWidth, vid.videoHeight));
+      const W = Math.round(vid.videoWidth * sc / 2) * 2, H = Math.round(vid.videoHeight * sc / 2) * 2, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const g = cv.getContext('2d'), R = { x: 0, y: 0, w: W, h: H }, end = tr.path[tr.path.length - 1].t, k = Math.min(W, H) / 400;
+      const draw = t => { g.drawImage(vid, 0, 0, W, H); drawTrace(g, R, tr, t, k, m); };
+      vid.currentTime = 0; await new Promise(r => { vid.onseeked = r; setTimeout(r, 1500); }); draw(-1);
+      const chunks = [], rec = new Rc(cv.captureStream(30), mime ? { mimeType: mime } : {}); rec.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
+      const stopped = new Promise(r => { rec.onstop = r; }); rec.start(250);
+      await vid.play();
+      await new Promise(r => { const f = () => { draw((vid.currentTime - tr.imp) / slow); if (vid.ended || live !== L0) return r(); requestAnimationFrame(f); }; f(); });
+      const t0 = (d - tr.imp) / slow, s0 = performance.now();
+      await new Promise(r => { const f = () => { const t = t0 + (performance.now() - s0) / 1000; draw(t); if (t > Math.max(end, t0) + 1.5 || live !== L0) return r(); requestAnimationFrame(f); }; f(); });
+      rec.stop(); await stopped;
+      const type = (rec.mimeType || mime || 'video/webm').split(';')[0], blob = new Blob(chunks, { type }), file = new File([blob], `shot-tracer-${m.club}.${type.includes('mp4') ? 'mp4' : 'webm'}`, { type });
+      if (live !== L0) return;
+      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: ctx.tr('เส้นลูก') }); } catch (e) {} }
+      else { const a = document.createElement('a'), u = URL.createObjectURL(blob); a.href = u; a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); }
+      live.lastExport = blob.size; toast(ctx.tr('บันทึกคลิปพร้อมเส้นแล้ว ✓'));
+    } catch (e) { toast('บันทึกคลิปไม่ได้'); }
+    L0.exp = false; vid.pause(); vid.removeAttribute('src'); if (live === L0) trBody();
+  }
 
   /* ---------- เทียบ 2 คลิป (ซิงค์ที่ป้าย "กระทบ") ---------- */
   function rCmp() {
@@ -750,6 +874,10 @@ export function createPractice(root, ctx) {
         showTags(); return; }
       case 'jump': { const vd = live.v, x = live.m?.tags?.[v]; if (!vd || x == null) return; vd.pause(); vd.currentTime = x; return; }
       case 'tool': { V.tool = v; root.querySelectorAll('[data-pa=tool]').forEach(b => b.classList.toggle('on', b.dataset.v === v)); const cv = root.querySelector('#ov'); if (cv) { cv.style.pointerEvents = v === 'view' ? 'none' : 'auto'; if (v !== 'view') cv.scrollIntoView({ block: 'center' }); } return; }
+      case 'trrun': runTrace(); return;
+      case 'trdtl': await updM(x => { x.view = 'dtl'; delete x.trace; }); runTrace(); return;
+      case 'trshow': V.trOff = !V.trOff; stopOver(); trBody(); if (live.v) paint(live.v, root.querySelector('#ov'), live.m?.draw); return;
+      case 'trexp': exportTrace(); return;
       case 'clrdraw': await updM(x => { x.draw = []; }); if (live.v) paint(live.v, root.querySelector('#ov'), []); return;
       case 'star': await updM(x => { x.star = !x.star; }); t.textContent = live.m.star ? '⭐' : '☆'; toast(live.m.star ? '⭐ ตั้งเป็นวงต้นแบบของไม้นี้' : 'เอาดาวออกแล้ว'); return;
       case 'delswing': if (await ask('ลบคลิปนี้?')) { await SW.del(V.swId); go('swings'); } return;
@@ -780,8 +908,8 @@ export function createPractice(root, ctx) {
     if (e.type !== 'change') return;
     if (k === 'note') { (D.setup[V.setupK] = D.setup[V.setupK] || {}).note = t.value.trim(); save(); toast('บันทึกแล้ว ✓'); }
     if (k === 'camclub') V.club = t.value;
-    if (k === 'swclub') updM(x => { x.club = t.value; }).then(() => { root.querySelector('#swh').textContent = `${t.value} · ${fmtD(live.m.t)}`; });
-    if (k === 'swslow') updM(x => { x.slow = +t.value; }).then(showTags);
+    if (k === 'swclub') updM(x => { x.club = t.value; }).then(() => { root.querySelector('#swh').textContent = `${t.value} · ${fmtD(live.m.t)}`; if (live.m.trace?.ok) toast(ctx.tr('เปลี่ยนไม้แล้ว · กด 🔁 หาใหม่ เพื่อคำนวณเส้นลูกตามไม้นี้')); });
+    if (k === 'swslow') updM(x => { x.slow = +t.value; if (x.trace) delete x.trace; }).then(() => { showTags(); trBody(); if (live.m.view === 'dtl') runTrace(); });
     if (k === 'swnote') updM(x => { x.note = t.value.trim(); });
     if (k === 'cmpwith') { V.cmpId = t.value; go('cmp'); }
   }
