@@ -79,6 +79,14 @@ export function makeClip(seed, opt = {}) {
   const other = r() < 0.25 ? { o: [U(-25, 25), 0, U(-3, 3)], fl: fly({ v0: U(35, 60), la: U(10, 25), dir: U(-5, 5), tilt: U(-10, 10), spin: U(3000, 7000) }), t0: U(-0.4, 0.8) } : null;
   const audioErr = U(-0.02, 0.02), t0 = -0.65, t1 = 1.7, shutter = U(0.3, 1) / fps;
   const nt = new Float32Array(4096); for (let k = 0; k < nt.length; k++) nt[k] = (r() + r() + r() - 1.5) * 2 * noise;
+  // harder conditions (own random stream so the base clip for a seed stays the same): moving clouds, leaves
+  // shimmering in the wind, camera shake, soft/compressed video, auto-exposure drift
+  const r2 = rng(seed * 7 + 3), U2 = (a, b) => a + (b - a) * r2(), hard = opt.hard !== false;
+  const clouds = hard && light !== 'night' && r2() < 0.6 ? { a: U2(5, light === 'overcast' ? 14 : 22), vx: U2(-12, 12), k1: U2(0.02, 0.06), k2: U2(0.05, 0.12) } : null;
+  const leaves = hard && r2() < 0.5 ? U2(4, 12) : 0, shake = hard && r2() < 0.4 ? U2(0.2, 0.8) : 0, soft = hard && r2() < 0.5 ? U2(0.3, 0.7) : 0, drift = hard ? U2(0, 0.04) : 0, dph = U2(0, 6);
+  const isTree = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (y >= treeTop[x] && y < vh) isTree[y * W + x] = 1;
+  const nt2 = new Float32Array(4096); for (let k = 0; k < nt2.length; k++) nt2[k] = (r2() - 0.5) * 2 * leaves;
+  let sx = 0, sy = 0;
   const frames = [];
   const disc = (img, x0, y0, rad, L, w = 1) => { // anti-aliased disc with lens blur (energy kept)
     const re = Math.sqrt(rad * rad + 0.36), a = w * (rad * rad) / (re * re), x1 = Math.floor(x0 - re - 1), x2 = Math.ceil(x0 + re + 1), y1 = Math.floor(y0 - re - 1), y2 = Math.ceil(y0 + re + 1);
@@ -89,6 +97,7 @@ export function makeClip(seed, opt = {}) {
   for (let k = 0; ; k++) {
     const tt = t0 + k / fps; if (tt > t1) break;
     const img = Float32Array.from(bg);
+    if (clouds) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (y >= treeTop[x]) continue; const X = x + clouds.vx * tt; img[y * W + x] += clouds.a * Math.sin(X * clouds.k1 + y * 0.03) * Math.sin(X * clouds.k2 * 0.7 - y * clouds.k2); }
     // golfer: legs, torso, head; arms + club swing (club angle from address → top → impact → finish)
     const ph = tt < -0.3 ? (tt + 0.65) / 0.35 * 0.5 : tt < 0 ? 0.5 + (tt + 0.3) / 0.3 * 0.5 : Math.min(2, 1 + tt / 0.35);
     const ang = ph <= 1 ? Math.PI * (1 - Math.cos(ph * Math.PI)) * 0.9 * (ph < 0.5 ? 1 : 1) : 0, armA = ph < 0.5 ? ph * 2 * 2.6 : ph < 1 ? 2.6 * (1 - (ph - 0.5) * 2) : -(ph - 1) * 2.8;
@@ -111,14 +120,20 @@ export function makeClip(seed, opt = {}) {
     if (other && tr > other.t0) { const P = posAt(other.fl, tr - other.t0), [u, v, z] = C.proj([P[0] + other.o[0], P[1], P[2] + other.o[2]]); if (z > 0.5) disc(img, u, v, C.f * R / z, ballL * 0.95); }
     for (const b of birds) disc(img, b.x + b.vx * tt, b.y + b.vy * tt + Math.sin(tt * 30) * 1.5, b.s, b.L);
     if (walker) { const x0 = walker.x + walker.vx * tt; for (let y = Math.floor(walker.y - walker.h); y < walker.y; y++) for (let x = Math.floor(x0 - walker.h * 0.18); x < x0 + walker.h * 0.18; x++) if (x >= 0 && y >= 0 && x < W && y < H) img[y * W + x] = walker.L; }
-    const gain = 1 + U(-0.015, 0.015), g = new Uint8Array(W * H), off = Math.floor(r() * 4096);
-    for (let q = 0; q < W * H; q++) { const v = img[q] * gain + nt[(q * 31 + off) & 4095]; g[q] = v < 0 ? 0 : v > 255 ? 255 : v; }
+    let fin = img;
+    if (soft) { const o = new Float32Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const q = y * W + x; if (x === 0 || y === 0 || x === W - 1 || y === H - 1) { o[q] = img[q]; continue; }
+      const m = (img[q - W - 1] + img[q - W] + img[q - W + 1] + img[q - 1] + img[q] + img[q + 1] + img[q + W - 1] + img[q + W] + img[q + W + 1]) / 9; o[q] = img[q] * (1 - soft) + m * soft; } fin = o; }
+    if (shake) { sx = sx * 0.7 + U2(-1, 1) * shake; sy = sy * 0.7 + U2(-1, 1) * shake; const o = new Float32Array(W * H), fx = sx - Math.floor(sx), fy = sy - Math.floor(sy), ix = Math.floor(sx), iy = Math.floor(sy);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const x0 = Math.min(W - 2, Math.max(0, x + ix)), y0 = Math.min(H - 2, Math.max(0, y + iy)), q = y0 * W + x0;
+        o[y * W + x] = (fin[q] * (1 - fx) + fin[q + 1] * fx) * (1 - fy) + (fin[q + W] * (1 - fx) + fin[q + W + 1] * fx) * fy; } fin = o; }
+    const gain = 1 + U(-0.015, 0.015) + drift * Math.sin(tt * 2 + dph), g = new Uint8Array(W * H), off = Math.floor(r() * 4096), off2 = Math.floor(r2() * 4096);
+    for (let q = 0; q < W * H; q++) { const v = fin[q] * gain + nt[(q * 31 + off) & 4095] + (leaves && isTree[q] ? nt2[(q * 17 + off2) & 4095] : 0); g[q] = v < 0 ? 0 : v > 255 ? 255 : v; }
     frames.push({ g, W, H, t: tt });
   }
   // ground truth (image path until landing, px)
   const path = []; for (let t = 0; t <= fl.time + 1e-9; t += 0.02) { const [u, v] = C.proj(posAt(fl, t)); path.push({ t: t - audioErr, x: u, y: v }); }
   return { frames, truth: { ball: { x: bx, y: by, r: br }, path, carry: fl.carry, side: fl.side, apex: fl.apex, time: fl.time, speed: shot.v0, launch: shot.la, dir: shot.dir, club: cl[0], kind, impact: -audioErr },
-    meta: { W, H, fps, light, noise, portrait, birds: birds.length, walker: !!walker, other: !!other, cam: { hc: C.hc, f: C.f / Math.max(W, H), dc: C.dc } } };
+    meta: { W, H, fps, light, noise, portrait, birds: birds.length, walker: !!walker, other: !!other, clouds: !!clouds, leaves: !!leaves, shake: !!shake, soft: !!soft, cam: { hc: C.hc, f: C.f / Math.max(W, H), dc: C.dc } } };
 }
 
 // compare a tracer result with the truth: mean image error along the whole flight (% of frame height), carry/side/apex errors

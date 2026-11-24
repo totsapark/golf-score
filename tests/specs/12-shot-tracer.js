@@ -20,7 +20,7 @@ module.exports = async t => {
   // ---- detection + tracking + fit on synthetic clips (seeds never used for tuning) ----
   const rows = []; let fp = 0;
   for (let s = 5001; s <= 5040; s++) {
-    const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal' }), res = Tr.analyze(frames, { club: truth.club }); res._W = meta.W; res._H = meta.H;
+    const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal', hard: false }), res = Tr.analyze(frames, { club: truth.club }); res._W = meta.W; res._H = meta.H;
     rows.push(Sy.score(res, truth, meta.H));
   }
   for (let s = 6001; s <= 6006; s++) { const { frames, truth } = Sy.makeClip(s, { kind: 'whiff' }); if (Tr.analyze(frames, { club: truth.club }).ok) fp++; }
@@ -30,6 +30,15 @@ module.exports = async t => {
   t.ok('median line error < 2% of frame height', med(ok.map(r => r.shape)) < 2, med(ok.map(r => r.shape)));
   t.ok('while the ball is visible the track is within 2.5% (median)', med(ok.map(r => r.seen)) < 2.5, med(ok.map(r => r.seen)));
   t.ok('no tracer on a missed swing (ball stays on the tee)', fp === 0, fp + '/6');
+  // harder clips: moving clouds, leaves in the wind, camera shake, soft video → fewer lines, but almost never a wrong one
+  const hard = []; for (let s = 7001; s <= 7040; s++) { const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal', hard: true }), res = Tr.analyze(frames, { club: truth.club }); res._W = meta.W; res._H = meta.H; hard.push(Sy.score(res, truth, meta.H)); }
+  const hok = hard.filter(Boolean);
+  t.ok('hard clips: line within 3% in ≥ 45%', hok.filter(r => r.shape < 3).length >= 18, hok.filter(r => r.shape < 3).length + '/40');
+  t.ok('hard clips: a wrong line (> 6% off) in ≤ 5%', hok.filter(r => r.shape > 6).length <= 2, hok.filter(r => r.shape > 6).map(r => r.shape.toFixed(1)));
+  const fr = Sy.makeClip(7003, { kind: 'normal', hard: true }).frames, a0 = fr[10].g, W0 = fr[10].W, H0 = fr[10].H, moved = new Uint8Array(W0 * H0);
+  for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) moved[y * W0 + x] = a0[Math.min(H0 - 1, y + 2) * W0 + Math.min(W0 - 1, x + 1)];
+  const sh = Tr.shiftOf(a0, moved, W0, H0);
+  t.ok('camera shake measured (frame moved by 1, 2 px)', Math.abs(sh[0] + 1) < 0.3 && Math.abs(sh[1] + 2) < 0.3, sh);
   // no sound: impact found by scanning the whole clip for the ball leaving the tee
   const cc = Sy.makeClip(5003, { kind: 'normal', fps: 60 }), cf = cc.frames.filter((f, i) => i % 4 === 0).map(f => ({ ...f, t: f.t + 0.65 }));
   const ci = Tr.coarseImpact(cf);
@@ -44,7 +53,7 @@ module.exports = async t => {
   // render the clip in the page (canvas → MediaRecorder): 120 fps frames recorded at 30 fps = ×4 slow motion
   const b64 = await p.evaluate(async () => {
     const { makeClip } = await import('/tests/synth-shot.mjs');
-    const { frames, meta } = makeClip(4242, { kind: 'normal', fps: 120, light: 'night', portrait: true, club: '7i' });
+    const { frames, meta } = makeClip(4242, { kind: 'normal', fps: 120, light: 'night', portrait: true, club: '7i', hard: false });
     const cv = document.createElement('canvas'); cv.width = meta.W; cv.height = meta.H; const g = cv.getContext('2d'), img = g.createImageData(meta.W, meta.H);
     const show = f => { for (let q = 0; q < f.g.length; q++) { img.data[q * 4] = img.data[q * 4 + 1] = img.data[q * 4 + 2] = f.g[q]; img.data[q * 4 + 3] = 255; } g.putImageData(img, 0, 0); };
     show(frames[0]); const st = cv.captureStream(30), rec = new MediaRecorder(st, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 6e6 }), ch = [];

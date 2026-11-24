@@ -3,7 +3,7 @@
 //        → ฟิตวิถีลูกตามฟิสิกส์ (แรงต้าน + แรงยกจากสปิน) → ได้เส้นเต็มจนลูกตก แม้ช่วงที่กล้องมองไม่เห็นลูกแล้ว
 // ภาพ = { g: Uint8Array (ความสว่าง 0–255), W, H, t (วินาทีจริง เทียบจังหวะกระทบโดยประมาณ) }
 // กล้องอยู่ด้านหลังผู้ตี เล็งขนานแนวเป้า (down-the-line) · หน่วยโลก: เมตร x = ขวา, y = ขึ้น, z = ไปทางเป้า · ลูกเริ่มที่ (0,0,0)
-const D2R = Math.PI / 180;
+const D2R = Math.PI / 180, K = globalThis.__TRK || (typeof process !== 'undefined' && process.env?.TRK ? JSON.parse(process.env.TRK) : {});   // K: ค่าทดลองตอนปรับจูน (ใช้เฉพาะในเทสต์)
 export const BALL_R = 0.02135;
 const MASS = 0.04593, KA = 0.5 * 1.2 * Math.PI * BALL_R ** 2 / MASS, G = 9.81, SPIN_TAU = 20;
 
@@ -141,27 +141,50 @@ export function coarseImpact(frames) {
   return leaveTime(frames, ball, pre, post);
 }
 
+// กล้องขยับ (มือสั่น/ลมโยกขาตั้ง): หาการเลื่อนทั้งภาพ (ทศนิยมพิกเซล) ที่ทำให้ b ตรงกับ a → b(x+dx, y+dy) ≈ a(x, y)
+export function shiftOf(a, b, W, H, R = 3) {
+  const pts = []; for (let y = R + 2; y < H - R - 2; y += 3) for (let x = R + 2; x < W - R - 2; x += 3) { const q = y * W + x, gx = a[q + 1] - a[q - 1], gy = a[q + W] - a[q - W]; if (gx * gx + gy * gy > 300) pts.push(q); }
+  if (pts.length < 60) return [0, 0];
+  const st = Math.max(1, Math.floor(pts.length / 2500)), S = {};
+  const sad = (dx, dy) => { const k = dy * W + dx; let s = 0; for (let i = 0; i < pts.length; i += st) { const d = Math.abs(a[pts[i]] - b[pts[i] + k]); s += d < 30 ? d : 30; } return s; };
+  let bx = 0, by = 0, bv = Infinity; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const v = S[dx + ',' + dy] = sad(dx, dy); if (v < bv) { bv = v; bx = dx; by = dy; } }
+  const sub = (m, c, p) => { const den = m - 2 * c + p; return den > 0 ? Math.max(-0.5, Math.min(0.5, (m - p) / (2 * den))) : 0; };
+  const fx = Math.abs(bx) < R ? sub(S[(bx - 1) + ',' + by], bv, S[(bx + 1) + ',' + by]) : 0, fy = Math.abs(by) < R ? sub(S[bx + ',' + (by - 1)], bv, S[bx + ',' + (by + 1)]) : 0;
+  return [bx + fx, by + fy];
+}
+function warp(b, W, H, dx, dy) {
+  const o = new Uint8Array(W * H), ix = Math.floor(dx), iy = Math.floor(dy), fx = dx - ix, fy = dy - iy;
+  for (let y = 0; y < H; y++) { const y0 = Math.min(H - 2, Math.max(0, y + iy)); for (let x = 0; x < W; x++) { const x0 = Math.min(W - 2, Math.max(0, x + ix)), q = y0 * W + x0;
+    o[y * W + x] = (b[q] * (1 - fx) + b[q + 1] * fx) * (1 - fy) + (b[q + W] * (1 - fx) + b[q + W + 1] * fx) * fy + 0.5; } }
+  return o;
+}
+
 // 3) จุดที่ขยับ: พิกเซลที่ต่างจากทั้งเฟรมก่อนและเฟรมหลัง (ทิศเดียวกัน) = ของที่อยู่ตรงนั้นแค่เฟรมนี้
 export function candidates(p, c, n, o = {}) {
-  const { W, H } = c, N = W * H, a = p.g, g = c.g, b = n.g, val = new Uint8Array(N), m = new Uint8Array(N);
+  const { W, H } = c, N = W * H, g = c.g, val = new Uint8Array(N), m = new Uint8Array(N);
+  let a = p.g, b = n.g;
+  if (o.stab !== false) {   // ชดเชยกล้องขยับก่อนหักลบภาพ
+    const s1 = shiftOf(g, a, W, H), s2 = shiftOf(g, b, W, H);
+    if (Math.hypot(...s1) > 0.15) a = warp(a, W, H, ...s1); if (Math.hypot(...s2) > 0.15) b = warp(b, W, H, ...s2);
+  }
   const smp = []; for (let k = 0; k < 1500; k++) { const q = (k * 7919 + 13) % N; smp.push(Math.abs(g[q] - a[q])); }
-  smp.sort((x, y) => x - y); const mad = smp[smp.length >> 1], thr = Math.max(o.minT || 9, 3.2 * mad + 6);
+  smp.sort((x, y) => x - y); const thr = Math.max(o.minT || 9, (K.tf ?? 3.2) * smp[smp.length >> 1] + 6);
   const y1 = o.yMax != null ? Math.min(H, Math.ceil(o.yMax)) : H;
   for (let q = 0; q < y1 * W; q++) {
     const d1 = g[q] - a[q], d2 = g[q] - b[q];
     const d = d1 > 0 && d2 > 0 ? Math.min(d1, d2) : d1 < 0 && d2 < 0 ? Math.min(-d1, -d2) * 0.8 : 0;
-    if (d > thr * 0.6) { val[q] = Math.min(255, d); m[q] = d > thr ? 1 : 0; }
+    if (d > thr * 0.6) { val[q] = Math.min(255, d); m[q] = d > thr ? 1 : 3; }
   }
   // ขยายก้อนให้รวมขอบจางของลูกเล็กๆ (เกณฑ์ต่ำ) แต่เริ่มจากพิกเซลที่ชัดเท่านั้น
-  for (let q = 0; q < N; q++) if (!m[q] && val[q] && ((q % W > 0 && m[q - 1] === 1) || (q >= W && m[q - W] === 1))) m[q] = 2;
-  for (let q = 0; q < N; q++) if (m[q]) m[q] = 1;
+  for (let q = 0; q < N; q++) if (m[q] === 3 && ((q % W > 0 && m[q - 1] === 1) || (q >= W && m[q - W] === 1))) m[q] = 2;
+  for (let q = 0; q < N; q++) m[q] = m[q] === 1 || m[q] === 2 ? 1 : 0;
   const maxN = o.maxN || Math.max(40, 0.0025 * N), maxW = o.maxW || Math.max(5, 0.035 * Math.min(W, H));
   let out = blobs(m, val, W, H, maxN).filter(bl => bl.minor <= maxW && bl.major <= Math.max(maxW * 6, 0.25 * H));
   // ลูกสีขาว: ตรงที่ลูกผ่าน ความสว่างต้องเปลี่ยนไปทางสีลูก (พื้นมืดกว่าลูก → ต้องสว่างขึ้น) ของมืดที่ผ่านพื้นมืดจึงไม่ใช่ลูก
   if (o.ballL != null) out = out.filter(bl => { const q = Math.min(H - 1, Math.floor(bl.y)) * W + Math.min(W - 1, Math.floor(bl.x)), bgv = (a[q] + b[q]) / 2, dv = g[q] - bgv, ex = o.ballL - bgv;
     return !(Math.abs(ex) > 25 && dv * ex < 0 && Math.abs(dv) > thr * 0.6); });
   out.sort((x, y) => y.s - x.s);
-  return { thr, list: out.slice(0, o.k || 14) };
+  return { thr, list: out.slice(0, o.k || (K.k ?? 20)) };
 }
 
 /* ---------- 4) ต่อจุดเป็นเส้นทางลูก (เก็บหลายสมมติฐาน เลือกเส้นที่ต่อเนื่องที่สุด) ---------- */
@@ -195,7 +218,7 @@ function predict(pts, t, B0 = 12) {
   return [cx[0] + cx[1] * u + cx[2] * u * u, cy[0] + cy[1] * u + cy[2] * u * u];
 }
 export function link(frames, ball, o = {}) {
-  const B = o.beam || 60, H = o.H, maxGap = o.maxGap || 0.13, r = Math.max(1, ball.r), fam = o.family || 8;
+  const B = o.beam || (K.B ?? 150), H = o.H, maxGap = o.maxGap || 0.13, r = Math.max(1, ball.r), fam = o.family || (K.fam ?? 5), gs = K.gs ?? 0.2;
   const ballA = Math.PI * (r + 1) ** 2;
   let hyps = [{ pts: [{ t: 0, x: ball.x, y: ball.y, s: 0, o: true }], sc: 0, miss: 0, f: -1 }], done = [], nf = 0;
   for (const fr of frames) {
@@ -216,7 +239,7 @@ export function link(frames, ball, o = {}) {
           if (dy > -0.6 * r || Math.abs(dx) > 0.7 * -dy + 3 * r || d > 0.6 * H || fr.t > 0.12) continue;
           if (d / fr.t < r * 200) continue;   // ลูกออกเร็วมาก (หัวไม้หลังกระทบช้ากว่าในภาพ)
         } else {
-          const step = Math.hypot(pr[0] - L.x, pr[1] - L.y), gate = 3 + 1.5 * r + 0.35 * step + 1.5 * h.miss, e = Math.hypot(c.x - pr[0], c.y - pr[1]);
+          const step = Math.hypot(pr[0] - L.x, pr[1] - L.y), gate = 3 + 1.5 * r + gs * step + 1.5 * h.miss, e = Math.hypot(c.x - pr[0], c.y - pr[1]);
           if (e > gate) continue;
           if (n <= 3 && c.y > L.y + 2 + r) continue;   // ช่วงแรกลูกต้องขึ้น
           { const P = h.pts[n - 2], vx = L.x - P.x, vy = L.y - P.y, sx = c.x - L.x, sy = c.y - L.y, vm = Math.hypot(vx, vy);
@@ -307,22 +330,33 @@ export function analyze(frames, o = {}) {
   const hyps = link(C, ball, { W, H, maxGap: Math.max(0.1, 3.5 * dtf * gap), B0: 40 * ball.r / (0.73 * Math.max(W, H) * BALL_R) });
   if (!hyps.length) return { ok: false, why: 'track', ball, ti };
   let best = null;
-  for (const h of hyps.slice(0, 6)) {
-    const obs = h.pts.filter(p => !p.o);
+  for (const h of hyps.slice(0, K.nfit ?? 12)) {
+    let obs = h.pts.filter(p => !p.o), out = h.out;
     if (obs.length < 3) continue;
-    const fit = fitFlight(obs, ball, W, H, { club: o.club, carry: o.carry, dtf, cam: o.cam, exit: h.out ? obs[obs.length - 1].t : null });
-    const q = fit.rms / (1.5 + ball.r * 0.5), sc = obs.length / (1 + q * q);
-    if (!best || sc > best.sc) best = { sc, fit, obs, h };
+    let fit = fitFlight(obs, ball, W, H, { club: o.club, carry: o.carry, dtf, cam: o.cam, exit: out ? obs[obs.length - 1].t : null });
+    // ลูกหายไปแล้วเส้นยังต่อไปเก็บจุดมั่ว: ตัดตั้งแต่จุดที่เริ่มไม่เข้ากับวิถีที่ฟิตได้ แล้วฟิตใหม่
+    for (let it = 0; it < 2 && K.trim !== false; it++) {
+      const lim = Math.max(2.5, 1.5 + 0.8 * ball.r) * 1.5; let cut = -1;
+      for (let i = 3; i < obs.length - 1; i++) if (fit.res[i] > lim && fit.res[i + 1] > lim) { cut = i; break; }
+      if (cut < 0 && obs.length > 4 && fit.res[obs.length - 1] > lim * 1.5) cut = obs.length - 1;
+      if (cut < 4) break;
+      obs = obs.slice(0, cut); out = false; fit = fitFlight(obs, ball, W, H, { club: o.club, carry: o.carry, dtf, cam: o.cam });
+    }
+    // วิถีที่ฟิตต้องเข้ากับจุดที่เห็นดี และมุมออกไม่ต่ำผิดปกติสำหรับไม้นี้ (กันเส้นมั่วจากจุดรบกวน)
+    const pr0 = o.prior || prior(o.club), plaus = fit.f / obs.length <= (K.fmax ?? 1.2) && fit.p.la - pr0.la >= -20;
+    const q = fit.rms / (1.5 + ball.r * 0.5), sc = obs.length / (1 + q * q) + (plaus ? 1000 : 0);
+    if (!best || sc > best.sc) best = { sc, fit, obs, h, plaus };
   }
   if (!best) return { ok: false, why: 'track', ball, ti };
   const { fit, obs } = best, span = obs[obs.length - 1].t - obs[0].t;
+  if (!best.plaus) return { ok: false, why: 'fit', ball, ti, rms: fit.rms };
   if (fit.rms > (1.5 + 0.6 * ball.r) * (obs.length >= 10 ? 1.6 : 1) || span < 0.03 || obs.length < 4) return { ok: false, why: 'fit', ball, ti, rms: fit.rms };
   return {
     ok: true, ball: { x: ball.x / W, y: ball.y / H, r: ball.r / W }, ti, dtf,
     track: obs.map(p => ({ t: +p.t.toFixed(4), x: +(p.x / W).toFixed(4), y: +(p.y / H).toFixed(4) })),
     path: fit.path.map(p => ({ t: +p.t.toFixed(3), x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(1) })),
     est: { speed: fit.p.v0, launch: fit.p.la, dir: fit.p.dir, spin: fit.p.spin, tilt: fit.p.tilt, carry: fit.carry, side: fit.side, apex: fit.apex, time: fit.time },
-    seen: span, rms: fit.rms, n: obs.length,
+    seen: span, rms: fit.rms, n: obs.length, diag: { f: fit.f / obs.length, raw: best.h.pts.length - 1, la: fit.p.la - (o.prior || prior(o.club)).la, v: fit.p.v0 / (o.prior || prior(o.club)).v0, ds: fit.p.ds, alt: hyps.length },
   };
 }
 
