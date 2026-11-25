@@ -94,7 +94,7 @@ export function makeClip(seed, opt = {}) {
       for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) if (Math.hypot(x + (i + 0.5) / 3 - x0, y + (j + 0.5) / 3 - y0) <= re) cov++;
       if (cov) { const q = y * W + x, c = cov / 9 * a; img[q] = img[q] * (1 - c) + L * c; } } };
   const thick = (img, a, b, w, L) => { const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])) + 1; for (let k = 0; k <= n; k++) { const x = a[0] + (b[0] - a[0]) * k / n, y = a[1] + (b[1] - a[1]) * k / n; for (let yy = Math.floor(y - w); yy <= y + w; yy++) for (let xx = Math.floor(x - w); xx <= x + w; xx++) if (xx >= 0 && yy >= 0 && xx < W && yy < H && Math.hypot(xx - x, yy - y) <= w) img[yy * W + xx] = L; } };
-  for (let k = 0; ; k++) {
+  for (let k = 0; !opt.noFrames; k++) {
     const tt = t0 + k / fps; if (tt > t1) break;
     const img = Float32Array.from(bg);
     if (clouds) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (y >= treeTop[x]) continue; const X = x + clouds.vx * tt; img[y * W + x] += clouds.a * Math.sin(X * clouds.k1 + y * 0.03) * Math.sin(X * clouds.k2 * 0.7 - y * clouds.k2); }

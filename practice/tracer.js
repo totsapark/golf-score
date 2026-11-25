@@ -3,6 +3,7 @@
 //        → ฟิตวิถีลูกตามฟิสิกส์ (แรงต้าน + แรงยกจากสปิน) → ได้เส้นเต็มจนลูกตก แม้ช่วงที่กล้องมองไม่เห็นลูกแล้ว
 // ภาพ = { g: Uint8Array (ความสว่าง 0–255), W, H, t (วินาทีจริง เทียบจังหวะกระทบโดยประมาณ) }
 // กล้องอยู่ด้านหลังผู้ตี เล็งขนานแนวเป้า (down-the-line) · หน่วยโลก: เมตร x = ขวา, y = ขึ้น, z = ไปทางเป้า · ลูกเริ่มที่ (0,0,0)
+import M0 from './tracer-model.js';
 const D2R = Math.PI / 180, K = globalThis.__TRK || (typeof process !== 'undefined' && process.env?.TRK ? JSON.parse(process.env.TRK) : {});   // K: ค่าทดลองตอนปรับจูน (ใช้เฉพาะในเทสต์)
 export const BALL_R = 0.02135;
 const MASS = 0.04593, KA = 0.5 * 1.2 * Math.PI * BALL_R ** 2 / MASS, G = 9.81, SPIN_TAU = 20;
@@ -73,9 +74,9 @@ function blobs(mask, val, W, H, maxN) {
   const seen = new Uint8Array(W * H), out = [], st = new Int32Array(W * H);
   for (let s0 = 0; s0 < W * H; s0++) {
     if (!mask[s0] || seen[s0]) continue;
-    let sp = 0, n = 0, sw = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, big = false; st[sp++] = s0; seen[s0] = 1;
+    let sp = 0, n = 0, sw = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, big = false, pk = 0; st[sp++] = s0; seen[s0] = 1;
     while (sp) {
-      const p = st[--sp], x = p % W, y = (p - x) / W, w = val[p]; n++;
+      const p = st[--sp], x = p % W, y = (p - x) / W, w = val[p]; n++; if (w > pk) pk = w;
       if (!big) { sw += w; sx += w * x; sy += w * y; sxx += w * x * x; syy += w * y * y; sxy += w * x * y; if (n > maxN) big = true; }
       if (x > 0 && mask[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; st[sp++] = p - 1; }
       if (x < W - 1 && mask[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; st[sp++] = p + 1; }
@@ -84,7 +85,7 @@ function blobs(mask, val, W, H, maxN) {
     }
     if (big || !sw) continue;
     const cx = sx / sw, cy = sy / sw, a = sxx / sw - cx * cx, b = syy / sw - cy * cy, c = sxy / sw - cx * cy, tr = (a + b) / 2, dd = Math.sqrt(Math.max(0, tr * tr - (a * b - c * c)));
-    out.push({ x: cx + 0.5, y: cy + 0.5, n, s: sw, major: 4 * Math.sqrt(Math.max(0, tr + dd)), minor: 4 * Math.sqrt(Math.max(0, tr - dd)) });
+    out.push({ x: cx + 0.5, y: cy + 0.5, n, s: sw, pk, major: 4 * Math.sqrt(Math.max(0, tr + dd)), minor: 4 * Math.sqrt(Math.max(0, tr - dd)) });
   }
   return out;
 }
@@ -159,6 +160,21 @@ function warp(b, W, H, dx, dy) {
   return o;
 }
 
+// ---- โมเดลเล็กที่ฝึกจากคลิปจำลอง (tests/train-tracer.mjs → tracer-model.js) ----
+let MODEL = M0 || {};
+export function setModel(m) { MODEL = m || {}; }
+// ลักษณะของจุดที่ขยับ (ไม่ขึ้นกับขนาดภาพ): ความแรงเทียบเกณฑ์ ขนาด/ความยาวเทียบลูก ทิศความสว่างเทียบสีลูก ตำแหน่งเทียบลูกที่ตั้ง เวลา
+export function candFeat(c, thr, ball, t, W, H) {
+  const r = Math.max(1, ball.r), d2 = 2 * r + 1, ex = (ball.L ?? 230) - c.bg, pol = Math.sign(ex || 1) * c.dv / thr;
+  return [Math.log1p(c.s / thr), Math.log1p(c.n), c.major / d2, c.minor / d2, Math.log1p(c.n / (Math.PI * (r + 1) ** 2)), Math.max(-5, Math.min(5, pol)),
+    c.bg / 255, ex / 255, (ball.y - c.y) / H, (c.x - ball.x) / W, Math.min(t ?? 0.3, 1.6), r / (0.01 * Math.max(W, H)), (c.pk || 0) / thr, thr / 40];
+}
+export function mlp(m, f) {   // f → (มาตรฐาน) → tanh hidden → sigmoid
+  const x = f.map((v, i) => (v - m.mu[i]) / m.sd[i]); let z = m.b2;
+  for (let j = 0; j < m.b1.length; j++) { let h = m.b1[j]; const w = m.W1[j]; for (let i = 0; i < x.length; i++) h += w[i] * x[i]; z += m.W2[j] * Math.tanh(h); }
+  return 1 / (1 + Math.exp(-z));
+}
+
 // 3) จุดที่ขยับ: พิกเซลที่ต่างจากทั้งเฟรมก่อนและเฟรมหลัง (ทิศเดียวกัน) = ของที่อยู่ตรงนั้นแค่เฟรมนี้
 export function candidates(p, c, n, o = {}) {
   const { W, H } = c, N = W * H, g = c.g, val = new Uint8Array(N), m = new Uint8Array(N);
@@ -181,9 +197,11 @@ export function candidates(p, c, n, o = {}) {
   const maxN = o.maxN || Math.max(40, 0.0025 * N), maxW = o.maxW || Math.max(5, 0.035 * Math.min(W, H));
   let out = blobs(m, val, W, H, maxN).filter(bl => bl.minor <= maxW && bl.major <= Math.max(maxW * 6, 0.25 * H));
   // ลูกสีขาว: ตรงที่ลูกผ่าน ความสว่างต้องเปลี่ยนไปทางสีลูก (พื้นมืดกว่าลูก → ต้องสว่างขึ้น) ของมืดที่ผ่านพื้นมืดจึงไม่ใช่ลูก
-  if (o.ballL != null) out = out.filter(bl => { const q = Math.min(H - 1, Math.floor(bl.y)) * W + Math.min(W - 1, Math.floor(bl.x)), bgv = (a[q] + b[q]) / 2, dv = g[q] - bgv, ex = o.ballL - bgv;
-    return !(Math.abs(ex) > 25 && dv * ex < 0 && Math.abs(dv) > thr * 0.6); });
-  out.sort((x, y) => y.s - x.s);
+  for (const bl of out) { const q = Math.min(H - 1, Math.floor(bl.y)) * W + Math.min(W - 1, Math.floor(bl.x)); bl.bg = (a[q] + b[q]) / 2; bl.dv = g[q] - bl.bg; }
+  if (o.ballL != null) out = out.filter(bl => { const ex = o.ballL - bl.bg; return !(Math.abs(ex) > 25 && bl.dv * ex < 0 && Math.abs(bl.dv) > thr * 0.6); });
+  // จัดอันดับ: โมเดลที่ฝึกจากคลิปจำลอง (ลูก vs สิ่งรบกวน) ถ้ามี · ไม่งั้นใช้ความแรงของจุด
+  if (o.ball && MODEL.cand && K.model !== false) { for (const bl of out) bl.p = mlp(MODEL.cand, candFeat(bl, thr, o.ball, o.t, W, H)); out.sort((x, y) => y.p - x.p); }
+  else out.sort((x, y) => y.s - x.s);
   return { thr, list: out.slice(0, o.k || (K.k ?? 20)) };
 }
 
@@ -233,7 +251,8 @@ export function link(frames, ball, o = {}) {
       for (const c of fr.list) {
         // ลูกเป็นก้อนเล็ก: กว้างไม่เกินขนาดลูก (ยาวได้ถ้าเบลอ) · หัวไม้/ก้านไม้/คนใหญ่กว่า
         const wide = Math.max(0, c.minor - (2 * r + 1.5)) / (r + 1), big = Math.max(0, c.n / (ballA * (1 + c.major / (2 * r + 1))) - 1.5);
-        let pen = 0.6 * wide + 0.4 * big;
+        let pen = c.p != null && !K.pen ? 0 : 0.6 * wide + 0.4 * big;
+        if (c.p != null) pen -= (K.pw ?? 4) * (c.p - 0.5);   // คะแนนจากโมเดล: ดูเหมือนลูกแค่ไหน
         if (n === 1) {   // จุดแรกหลังกระทบ: ต้องอยู่เหนือลูก ในกรวยแนวเป้า ไม่ไกลเกิน และไม่ช้าเกินลูกจริง
           const dy = c.y - ball.y, dx = c.x - ball.x, d = Math.hypot(dx, dy);
           if (dy > -0.6 * r || Math.abs(dx) > 0.7 * -dy + 3 * r || d > 0.6 * H || fr.t > 0.12) continue;
@@ -247,7 +266,7 @@ export function link(frames, ball, o = {}) {
           pen += (e / gate) ** 2 * 0.8;
         }
         const f = n === 1 ? nf++ : h.f;
-        next.push({ pts: [...h.pts, { t: fr.t, x: c.x, y: c.y, s: c.s, w: c.minor }], sc: h.sc + 1 + 0.25 * Math.min(1, c.s / (fr.thr * ballA)) - pen, miss: 0, f });
+        next.push({ pts: [...h.pts, { t: fr.t, x: c.x, y: c.y, s: c.s, w: c.minor, p: c.p }], sc: h.sc + 1 + 0.25 * Math.min(1, c.s / (fr.thr * ballA)) - pen, miss: 0, f });
       }
     }
     // ตัดเส้นซ้ำ (จบที่จุดเดียวกัน) · จำกัดจำนวนต่อ "ตระกูล" (จุดแรกเดียวกัน) ให้มีหลายทางเลือกเหลือไว้ฟิต
@@ -278,8 +297,11 @@ function nm(f, x0, step, it = 400) {
   }
   const b = F.indexOf(Math.min(...F)); return { x: P[b], f: F[b] };
 }
+export const FIT_HP = { v: 0.25, la: 7, dir: 9, spin: 0.35, tilt: 16, t0: 0.8, dsk: 1, s0: 1.2, s1: 0.25 };
 export function fitFlight(obs, ball, W, H, o = {}) {
-  const pr = o.prior || prior(o.club), dtf = o.dtf || 1 / 60, sig = o.sigma || 1.2 + 0.25 * ball.r, sdD = ball.r >= 3 ? 0.18 : ball.r >= 1.8 ? 0.28 : 0.4;
+  // ความกว้างของค่าตั้งต้น (prior) แต่ละตัว · ปรับจูนบนวิถีจำลองหลายพันเส้น (tests/tune-fit.mjs)
+  const hp = { ...FIT_HP, ...(K.hp || {}) };
+  const pr = o.prior || prior(o.club), dtf = o.dtf || 1 / 60, sig = o.sigma || hp.s0 + hp.s1 * ball.r, sdD = (ball.r >= 3 ? 0.18 : ball.r >= 1.8 ? 0.28 : 0.4) * hp.dsk;
   const tLast = Math.max(...obs.map(p => p.t)) + 0.05, carry = o.carry;
   const dec = q => ({ v0: Math.exp(q[0]), la: q[1], dir: q[2], spin: Math.exp(q[3]), tilt: q[4], t0: q[5] * dtf, ds: q[6] });
   const cost = q => {
@@ -287,7 +309,7 @@ export function fitFlight(obs, ball, W, H, o = {}) {
     const cam = camera(ball, W, H, { ...o.cam, ds: p.ds }), sim = simulate(p, { tmax: carry ? 12 : tLast, dt: 0.01 });
     let e = 0;
     for (const ob of obs) { const [X, Y, Z] = at(sim, ob.t - p.t0), [u, v] = project(cam, X, Y, Z), r2 = ((u - ob.x) ** 2 + (v - ob.y) ** 2) / sig ** 2; e += 9 * Math.log(1 + r2 / 9); }
-    e += ((q[0] - Math.log(pr.v0)) / 0.25) ** 2 + ((p.la - pr.la) / 7) ** 2 + (p.dir / 9) ** 2 + ((q[3] - Math.log(pr.spin)) / 0.35) ** 2 + (p.tilt / 16) ** 2 + (q[5] / 0.8) ** 2 + (p.ds / sdD) ** 2;
+    e += ((q[0] - Math.log(pr.v0)) / hp.v) ** 2 + ((p.la - pr.la) / hp.la) ** 2 + (p.dir / hp.dir) ** 2 + ((q[3] - Math.log(pr.spin)) / hp.spin) ** 2 + (p.tilt / hp.tilt) ** 2 + (q[5] / hp.t0) ** 2 + (p.ds / sdD) ** 2;
     if (carry) e += ((sim.carry - carry) / (0.15 * carry)) ** 2;
     // ลูกออกนอกจอ: หลังจากนั้นช่วงสั้นๆ เส้นต้องยังอยู่นอกจอ (ไม่งั้นกล้องต้องเห็นลูก)
     if (o.exit) for (let tt = o.exit + 0.03; tt < o.exit + 0.3; tt += 0.03) { const [X, Y, Z] = at(sim, tt - p.t0), [u, v] = project(cam, X, Y, Z), inside = Math.min(v, u, W - u);
@@ -300,10 +322,10 @@ export function fitFlight(obs, ball, W, H, o = {}) {
   let best = null; for (const s of starts) { const r1 = nm(cost, s, step, 350); if (!best || r1.f < best.f) best = r1; }
   best = nm(cost, best.x, step.map(v => v * 0.3), 300);
   const p = dec(best.x), cam = camera(ball, W, H, { ...o.cam, ds: p.ds }), sim = simulate(p, { tmax: 12, dt: 0.01 });
-  let se = 0; const res = obs.map(ob => { const [X, Y, Z] = at(sim, ob.t - p.t0), [u, v] = project(cam, X, Y, Z), e = Math.hypot(u - ob.x, v - ob.y); se += e * e; return e; });
+  let se = 0, fd = 0; const res = obs.map(ob => { const [X, Y, Z] = at(sim, ob.t - p.t0), [u, v] = project(cam, X, Y, Z), e = Math.hypot(u - ob.x, v - ob.y); se += e * e; fd += 9 * Math.log(1 + e * e / sig ** 2 / 9); return e; });
   const path = []; for (let k = 0; k < sim.T.length; k += 2) { const [u, v, z] = project(cam, sim.X[k], sim.Y[k], sim.Z[k]); path.push({ t: sim.T[k] + p.t0, x: u / W, y: v / H, z }); }
   { const k = sim.T.length - 1, [u, v, z] = project(cam, sim.X[k], sim.Y[k], sim.Z[k]); if (path[path.length - 1].t !== sim.T[k] + p.t0) path.push({ t: sim.T[k] + p.t0, x: u / W, y: v / H, z }); }
-  return { p, cam, sim, path, f: best.f, rms: Math.sqrt(se / obs.length), res, carry: sim.carry, side: sim.side, apex: sim.apex, time: sim.time };
+  return { p, cam, sim, path, f: best.f, fd, fp: best.f - fd, rms: Math.sqrt(se / obs.length), res, carry: sim.carry, side: sim.side, apex: sim.apex, time: sim.time };
 }
 
 /* ---------- ทั้งหมดในครั้งเดียว ---------- */
@@ -324,12 +346,13 @@ export function analyze(frames, o = {}) {
   const C = [];
   for (let k = gap; k < F.length - gap; k++) {
     if (F[k].t < 0.003) continue;
-    const c = candidates(F[k - gap], F[k], F[k + gap], { yMax: ball.y + ball.r * 2, ballL: ball.L });
+    const c = candidates(F[k - gap], F[k], F[k + gap], { yMax: ball.y + ball.r * 2, ballL: ball.L, ball, t: F[k].t });
     C.push({ t: F[k].t, thr: c.thr, list: c.list });
   }
   const hyps = link(C, ball, { W, H, maxGap: Math.max(0.1, 3.5 * dtf * gap), B0: 40 * ball.r / (0.73 * Math.max(W, H) * BALL_R) });
   if (!hyps.length) return { ok: false, why: 'track', ball, ti };
   let best = null;
+  const allc = [];
   for (const h of hyps.slice(0, K.nfit ?? 12)) {
     let obs = h.pts.filter(p => !p.o), out = h.out;
     if (obs.length < 3) continue;
@@ -343,20 +366,28 @@ export function analyze(frames, o = {}) {
       obs = obs.slice(0, cut); out = false; fit = fitFlight(obs, ball, W, H, { club: o.club, carry: o.carry, dtf, cam: o.cam });
     }
     // วิถีที่ฟิตต้องเข้ากับจุดที่เห็นดี และมุมออกไม่ต่ำผิดปกติสำหรับไม้นี้ (กันเส้นมั่วจากจุดรบกวน)
-    const pr0 = o.prior || prior(o.club), plaus = fit.f / obs.length <= (K.fmax ?? 1.2) && fit.p.la - pr0.la >= -20;
-    const q = fit.rms / (1.5 + ball.r * 0.5), sc = obs.length / (1 + q * q) + (plaus ? 1000 : 0);
-    if (!best || sc > best.sc) best = { sc, fit, obs, h, plaus };
+    const pr0 = o.prior || prior(o.club), span0 = obs[obs.length - 1].t - obs[0].t, rr = fit.rms / (1.5 + 0.6 * ball.r);
+    const feat = [Math.log1p(obs.length), span0, rr, Math.log1p(fit.fd / obs.length), Math.log1p(fit.fp), fit.p.la - pr0.la, Math.log(fit.p.v0 / pr0.v0), fit.p.ds, (h.pts.length - 1 - obs.length) / (h.pts.length - 1),
+      obs.reduce((a, q) => a + (q.p ?? 0.5), 0) / obs.length, Math.min(...obs.map(q => q.p ?? 0.5)), h.out ? 1 : 0, ball.r, Math.log(dtf), Math.log1p(hyps.length), obs[0].t, fit.p.dir / 10, fit.p.tilt / 20];
+    // เส้นนี้น่าเชื่อไหม: โมเดลที่ฝึกจากคลิปจำลอง (ถ้ามี) · ไม่งั้นกฎตายตัว (ฟิตเข้ากับจุดที่เห็น + มุมออกไม่ต่ำผิดปกติ)
+    const plaus0 = fit.fd / obs.length <= (K.fmax ?? 1.2) && fit.fp <= (K.pmax ?? 25) && fit.p.la - pr0.la >= -20, pm = MODEL.track && K.tmodel !== false ? mlp(MODEL.track, feat) : null;
+    const tm = K.tmode ?? 'or', plaus = pm == null ? plaus0 : tm === 'select' ? plaus0 : tm === 'or' ? plaus0 || pm >= (K.tau ?? 0.99) : tm === 'and' ? plaus0 && pm >= (K.tau ?? 0.3) : pm >= (K.tau ?? 0.5);
+    const q = fit.rms / (1.5 + ball.r * 0.5), sc = (pm != null ? pm * 100 : obs.length / (1 + q * q)) + (plaus ? 1000 : 0);
+    if (o.all) allc.push({ feat, path: fit.path.map(p => ({ t: p.t, x: p.x, y: p.y, z: p.z })), seen: span0, est: { carry: fit.carry, side: fit.side, apex: fit.apex, speed: fit.p.v0 } });
+    if (!best || sc > best.sc) best = { sc, fit, obs, h, plaus, pm };
   }
+  if (o.all) return { ok: false, why: 'all', cands: allc };
   if (!best) return { ok: false, why: 'track', ball, ti };
   const { fit, obs } = best, span = obs[obs.length - 1].t - obs[0].t;
-  if (!best.plaus) return { ok: false, why: 'fit', ball, ti, rms: fit.rms };
-  if (fit.rms > (1.5 + 0.6 * ball.r) * (obs.length >= 10 ? 1.6 : 1) || span < 0.03 || obs.length < 4) return { ok: false, why: 'fit', ball, ti, rms: fit.rms };
+  const dg = { n: obs.length, f: fit.fd / obs.length, fp: fit.fp, la: fit.p.la - (o.prior || prior(o.club)).la, pm: best.pm, span, rr: fit.rms / (1.5 + 0.6 * ball.r) };
+  if (!best.plaus) return { ok: false, why: 'fit', ball, ti, rms: fit.rms, diag: dg };
+  if ((best.pm == null && fit.rms > (1.5 + 0.6 * ball.r) * (obs.length >= 10 ? 1.6 : 1)) || span < 0.03 || obs.length < (K.nmin ?? 4)) return { ok: false, why: 'fit2', ball, ti, rms: fit.rms, diag: dg };
   return {
     ok: true, ball: { x: ball.x / W, y: ball.y / H, r: ball.r / W }, ti, dtf,
     track: obs.map(p => ({ t: +p.t.toFixed(4), x: +(p.x / W).toFixed(4), y: +(p.y / H).toFixed(4) })),
     path: fit.path.map(p => ({ t: +p.t.toFixed(3), x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(1) })),
     est: { speed: fit.p.v0, launch: fit.p.la, dir: fit.p.dir, spin: fit.p.spin, tilt: fit.p.tilt, carry: fit.carry, side: fit.side, apex: fit.apex, time: fit.time },
-    seen: span, rms: fit.rms, n: obs.length, diag: { f: fit.f / obs.length, raw: best.h.pts.length - 1, la: fit.p.la - (o.prior || prior(o.club)).la, v: fit.p.v0 / (o.prior || prior(o.club)).v0, ds: fit.p.ds, alt: hyps.length },
+    seen: span, rms: fit.rms, n: obs.length, diag: { f: fit.f / obs.length, raw: best.h.pts.length - 1, la: fit.p.la - (o.prior || prior(o.club)).la, v: fit.p.v0 / (o.prior || prior(o.club)).v0, ds: fit.p.ds, alt: hyps.length, pm: best.pm },
   };
 }
 
