@@ -14,6 +14,18 @@ module.exports = async t => {
   t.ok('spin axis tilt curves the ball (+ right, − left)', fade.side > 8 && draw.side < -8, [fade.side, draw.side]);
   const b1 = Tr.carryBand(150, 0.5, false), b2 = Tr.carryBand(150, 0.08, false), b3 = Tr.carryBand(150, 0.08, true);
   t.ok('carry range: wider when the ball was seen briefly, narrow with own club distances', b1.hi - b1.lo < b2.hi - b2.lo && b3.hi - b3.lo < b1.hi - b1.lo && b1.lo < 150 && b1.hi > 150);
+  // trained spot model: in real (synthetic) frames, the ball makes the top 5 more often than ranking by strength alone
+  const Mo = (await import(pathToFileURL(path.join(t.root, 'practice', 'tracer-model.js')))).default;
+  let hitM = 0, hitS = 0, tot = 0;
+  for (let s = 5101; s <= 5112; s++) {
+    const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal' }), pre = frames.filter(f => f.t >= -0.6 && f.t <= -0.06), post = frames.filter(f => f.t >= 0.15 && f.t <= 0.7);
+    const ball = Tr.findAddress(pre.filter((f, i) => i % 3 === 0), post.filter((f, i) => i % 3 === 0)); if (!ball) continue;
+    const ti = Tr.impactTime(frames, ball, pre, post) ?? 0, P = truth.path, at = q => { for (let i = 1; i < P.length; i++) if (P[i].t >= q) { const a = P[i - 1], b = P[i], f = (q - a.t) / (b.t - a.t); return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }; } return null; };
+    for (let k = 1; k < frames.length - 1; k++) { const tt = frames[k].t - ti, q = at(frames[k].t); if (tt < 0.01 || tt > 0.4 || !q || q.y < 2) continue;
+      const o = { yMax: ball.y + ball.r * 2, ballL: ball.L, t: tt, k: 5 }, near = l => l.some(c => Math.hypot(c.x - q.x, c.y - q.y) < Math.max(2.5, 1.2 * ball.r));
+      tot++; if (near(Tr.candidates(frames[k - 1], frames[k], frames[k + 1], { ...o, ball }).list)) hitM++; if (near(Tr.candidates(frames[k - 1], frames[k], frames[k + 1], o).list)) hitS++; }
+  }
+  t.ok('trained spot model: ball in the top 5 more often than by strength', !!Mo.cand && !!Mo.track && hitM > hitS, { model: hitM, strength: hitS, frames: tot });
   t.ok('shot shape names', Tr.shapeOf({ dir: 0, side: 0, carry: 150 }).name === 'ตรง' && Tr.shapeOf({ dir: 0, side: 12, carry: 150 }).name.includes('เฟด') && Tr.shapeOf({ dir: 0, side: -30, carry: 150 }).name.includes('ฮุก')
     && Tr.shapeOf({ dir: 0, side: 12, carry: 150 }, true).name.includes('ดรอว์'));
 
@@ -31,10 +43,10 @@ module.exports = async t => {
   t.ok('while the ball is visible the track is within 2.5% (median)', med(ok.map(r => r.seen)) < 2.5, med(ok.map(r => r.seen)));
   t.ok('no tracer on a missed swing (ball stays on the tee)', fp === 0, fp + '/6');
   // harder clips: moving clouds, leaves in the wind, camera shake, soft video → fewer lines, but almost never a wrong one
-  const hard = []; for (let s = 7001; s <= 7040; s++) { const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal', hard: true }), res = Tr.analyze(frames, { club: truth.club }); res._W = meta.W; res._H = meta.H; hard.push(Sy.score(res, truth, meta.H)); }
+  const hard = []; for (let s = 7001; s <= 7100; s++) { const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal', hard: true }), res = Tr.analyze(frames, { club: truth.club }); res._W = meta.W; res._H = meta.H; hard.push(Sy.score(res, truth, meta.H)); }
   const hok = hard.filter(Boolean);
-  t.ok('hard clips: line within 3% in ≥ 45%', hok.filter(r => r.shape < 3).length >= 18, hok.filter(r => r.shape < 3).length + '/40');
-  t.ok('hard clips: a wrong line (> 6% off) in ≤ 5%', hok.filter(r => r.shape > 6).length <= 2, hok.filter(r => r.shape > 6).map(r => r.shape.toFixed(1)));
+  t.ok('hard clips: line within 3% in ≥ 60% (100 clips)', hok.filter(r => r.shape < 3).length >= 60, hok.filter(r => r.shape < 3).length + '/100');
+  t.ok('hard clips: a wrong line (> 6% off) in ≤ 4%', hok.filter(r => r.shape > 6).length <= 4, hok.filter(r => r.shape > 6).map(r => r.shape.toFixed(1)));
   const fr = Sy.makeClip(7003, { kind: 'normal', hard: true }).frames, a0 = fr[10].g, W0 = fr[10].W, H0 = fr[10].H, moved = new Uint8Array(W0 * H0);
   for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) moved[y * W0 + x] = a0[Math.min(H0 - 1, y + 2) * W0 + Math.min(W0 - 1, x + 1)];
   const sh = Tr.shiftOf(a0, moved, W0, H0);
