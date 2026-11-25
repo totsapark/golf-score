@@ -4,8 +4,9 @@
 // ภาพ = { g: Uint8Array (ความสว่าง 0–255), W, H, t (วินาทีจริง เทียบจังหวะกระทบโดยประมาณ) }
 // กล้องอยู่ด้านหลังผู้ตี เล็งขนานแนวเป้า (down-the-line) · หน่วยโลก: เมตร x = ขวา, y = ขึ้น, z = ไปทางเป้า · ลูกเริ่มที่ (0,0,0)
 import M0 from './tracer-model.js';
-const D2R = Math.PI / 180, K = globalThis.__TRK || (typeof process !== 'undefined' && process.env?.TRK ? JSON.parse(process.env.TRK) : {});   // K: ค่าทดลองตอนปรับจูน (ใช้เฉพาะในเทสต์)
+const D2R = Math.PI / 180, K = { ...(globalThis.__TRK || {}), ...(typeof process !== 'undefined' && process.env?.TRK ? JSON.parse(process.env.TRK) : {}) };   // K: ค่าทดลองตอนปรับจูน (ใช้เฉพาะในเทสต์)
 export const BALL_R = 0.02135;
+export function tune(o) { for (const k of Object.keys(K)) delete K[k]; Object.assign(K, o || {}); }   // เฉพาะตอนปรับจูนในเทสต์
 const MASS = 0.04593, KA = 0.5 * 1.2 * Math.PI * BALL_R ** 2 / MASS, G = 9.81, SPIN_TAU = 20;
 
 export function toGray(d, W, H) { const g = new Uint8Array(W * H); for (let p = 0, i = 0; p < W * H; p++, i += 4) g[p] = (77 * d[i] + 150 * d[i + 1] + 29 * d[i + 2]) >> 8; return g; }

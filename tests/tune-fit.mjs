@@ -17,7 +17,7 @@ function sample(s) {   // one trajectory as the tracker would observe it
   return { obs, ball, truth: { ...truth, path: P.map(p => ({ ...p, t: p.t - t0 })) }, meta };
 }
 function evalHp(hp, seeds) {
-  globalThis.__TRK = { hp }; let e = 0, n = 0;
+  T.tune({ hp }); let e = 0, n = 0;
   for (const s of seeds) { const c = sample(s); if (!c) continue;
     const fit = T.fitFlight(c.obs, c.ball, c.meta.W, c.meta.H, { club: c.truth.club, dtf: 1 / c.meta.fps });
     const sc = score({ ok: true, path: fit.path, seen: c.obs.at(-1).t, est: { carry: fit.carry, side: fit.side, apex: fit.apex, speed: fit.p.v0 }, _W: c.meta.W, _H: c.meta.H }, c.truth, c.meta.H);
