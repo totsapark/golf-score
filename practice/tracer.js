@@ -138,9 +138,13 @@ const sub = (a, n) => a.length > n ? a.filter((f, i) => i % Math.ceil(a.length /
 // ไม่มีจังหวะกระทบจากเสียง: กวาดทั้งคลิปแบบหยาบ (t = วินาทีในคลิป) → ลูกที่อยู่ตอนต้นแล้วหายไปตอนท้าย → เวลาที่หาย
 export function coarseImpact(frames) {
   const n = frames.length; if (n < 8) return null;
-  const pre = frames.slice(0, Math.max(2, Math.floor(n * 0.3))), post = frames.slice(Math.ceil(n * 0.8));
-  const ball = findAddress(sub(pre, 8), sub(post, 6)); if (!ball) return null;
-  return leaveTime(frames, ball, pre, post);
+  // ไม่รู้ว่าตีตอนไหน (คลิปสโลว์อาจตีตั้งแต่ช่วงต้น): ลองหลายช่วง "ก่อน/หลัง" แล้วเลือกที่เห็นลูกชัดสุด
+  const post = frames.slice(Math.ceil(n * 0.85)); let best = null;
+  for (const fp of [0.08, 0.15, 0.25, 0.35]) {
+    const pre = frames.slice(0, Math.max(2, Math.floor(n * fp))), ball = findAddress(sub(pre, 8), sub(post, 6)); if (!ball) continue;
+    const t = leaveTime(frames, ball, pre, post); if (t != null && (!best || ball.c > best.c)) best = { t, c: ball.c };
+  }
+  return best ? best.t : null;
 }
 
 // กล้องขยับ (มือสั่น/ลมโยกขาตั้ง): หาการเลื่อนทั้งภาพ (ทศนิยมพิกเซล) ที่ทำให้ b ตรงกับ a → b(x+dx, y+dy) ≈ a(x, y)

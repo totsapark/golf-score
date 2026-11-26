@@ -4,6 +4,7 @@ import * as P from './core.js';
 import * as Vi from './vision.js';
 import * as Tr from './tracer.js';
 
+const K_NOPLAY = typeof location !== 'undefined' && /[?&]noplay\b/.test(location.search);
 const LS = 'golfpractice', DAY = 864e5, FRAME = 1 / 30;
 const load = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch (e) { return {}; } };
 const fmtD = t => { const d = new Date(t); return d.getDate() + '/' + (d.getMonth() + 1) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
@@ -449,6 +450,27 @@ export function createPractice(root, ctx) {
     v.currentTime = 0.001;
   }
   const dur = v => isFinite(v.duration) ? v.duration : 0;
+  // วิดีโอที่ใช้ดึงภาพเบื้องหลัง: ต้องอยู่ในหน้าเว็บจริงและเคยกดเล่น ไม่งั้น iPhone ไม่ยอมถอดรหัสภาพ (ได้ภาพดำ/ค้าง)
+  function workVideo() {
+    const v = document.createElement('video'); v.muted = true; v.defaultMuted = true; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+    v.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
+    document.body.appendChild(v); (live.off = live.off || []).push(() => { v.pause(); v.removeAttribute('src'); v.load?.(); v.remove(); }); return v;
+  }
+  async function prime(v) { try { await v.play(); } catch (e) {} v.pause(); }
+  const seekTo = (v, t) => new Promise(r => { let ok = false; const h = () => { if (ok) return; ok = true; v.removeEventListener('seeked', h); r(); }; v.addEventListener('seeked', h); v.currentTime = t; setTimeout(h, 2500); });
+  // เล่นคลิปช่วง [c0, c1] แล้วเก็บทุกเฟรมที่แสดง (requestVideoFrameCallback) · เร็วและแม่นกว่า seek ทีละเฟรมมาก
+  async function playGrab(v, c0, c1, rate, keepDt, onFrame, stop) {
+    v.pause(); await seekTo(v, Math.max(0, c0));
+    return new Promise(res => {
+      let last = -1e9, done = false; const fin = () => { if (done) return; done = true; clearTimeout(to); v.pause(); v.onended = null; res(); };
+      const cb = (now, md) => { if (done) return; if (stop()) return fin(); const t = md?.mediaTime ?? v.currentTime;
+        if (t >= c0 - 1e-3 && t - last >= keepDt - 1e-4) { last = t; onFrame(t); } if (t >= c1 || v.ended) return fin(); v.requestVideoFrameCallback(cb); };
+      const to = setTimeout(fin, ((c1 - c0) / rate + 10) * 1000);
+      v.onended = fin; v.requestVideoFrameCallback(cb); v.playbackRate = rate; v.play().catch(() => setTimeout(() => { if (!done) v.play().catch(fin); }, 300));
+    });
+  }
+  const hasRVFC = () => typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   function contentRect(v, cv) { const W = cv.width, H = cv.height, vw = v.videoWidth || 9, vh = v.videoHeight || 16, s = Math.min(W / vw, H / vh); return { x: (W - vw * s) / 2, y: (H - vh * s) / 2, w: vw * s, h: vh * s }; }
   function paint(v, cv, shapes, tmp, tOver) {
     const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1; if (cv.width !== Math.round(r.width * dpr)) { cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); }
@@ -467,6 +489,7 @@ export function createPractice(root, ctx) {
     root.querySelector('[data-pi=swclub]').value = m.club; root.querySelector('[data-pi=swslow]').value = String(m.slow || 1); root.querySelector('[data-pi=swnote]').value = m.note || '';
     const blob = await SW.blob(m.id, m.type); if (!blob) return toast('ไฟล์คลิปหาย');
     try { await loadVid(v, blob); } catch (e) { return toast('เปิดคลิปนี้ไม่ได้'); }
+    if (/iP(hone|ad|od)|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0) { await prime(v); v.currentTime = 0.001; }   // iPhone: ให้ขึ้นภาพแรก (ไม่งั้นจอดำจนกดเล่น)
     live.v = v; v.playbackRate = V.speed;
     const sync = () => { const d = dur(v); if (d) sc.value = Math.round(v.currentTime / d * 1000); const tn = root.querySelector('#tnow'); if (tn) tn.textContent = v.currentTime.toFixed(2); paint(v, cv, m.draw); };
     v.addEventListener('timeupdate', sync); v.addEventListener('seeked', sync); v.addEventListener('loadeddata', sync);
@@ -495,7 +518,7 @@ export function createPractice(root, ctx) {
   async function updM(fn) { const m = live.m; if (!m) return; fn(m); await SW.put(m); }
 
   /* ---------- เส้นลูก (Shot Tracer): หาลูก → ตามลูก → ฟิตวิถีตามฟิสิกส์ → วาดเส้นแดงทับคลิป (อัตโนมัติ ไม่ต้องแตะ) ---------- */
-  const TR_WHY = { clip: 'คลิปต้องมีช่วงก่อนตีอย่างน้อย ~0.6 วิ และหลังตีอย่างน้อย ~1 วิ', ball: 'หาลูกที่ตั้งไม่เจอ · ให้เห็นลูกชัด ไม่โดนตัวหรือไม้บัง กล้องห่างลูก 2–4 ม.',
+  const TR_WHY = { slow: 'ใช้เวลานานเกินไปเลยหยุดไว้ก่อน · คลิปที่ยาวหรือความละเอียดสูงมาก (4K) ใช้เวลานาน ลองตัดคลิปให้เหลือ ~5 วิรอบจังหวะตี หรืออัด 1080p', clip: 'คลิปต้องมีช่วงก่อนตีอย่างน้อย ~0.6 วิ และหลังตีอย่างน้อย ~1 วิ', ball: 'หาลูกที่ตั้งไม่เจอ · ให้เห็นลูกชัด ไม่โดนตัวหรือไม้บัง กล้องห่างลูก 2–4 ม.',
     track: 'ตามลูกที่บินออกไปไม่ได้ · ฉากหลังควรเป็นฟ้าหรือต้นไม้ ไม่มีคนเดินผ่าน ใช้ 60 fps หรือสโลว์โมชัน', fit: 'เห็นลูกไม่ชัดพอ เลยไม่วาด (กันเส้นผิด) · ถอยกล้องให้เห็นฟ้าเยอะขึ้น ถือแนวตั้ง ให้ลูกอยู่ส่วนล่างของจอ กล้องนิ่ง' };
   const TR_TIPS = `<ul class="plist" style="margin-top:6px"><li><span>ตั้งมือถือด้านหลังผู้ตี เล็งไปทางเป้า (ปุ่ม "ด้านหลัง" ตอนอัด)</span></li><li><span>ถือแนวตั้ง ลูกอยู่ส่วนล่าง ~1/4 ของจอ เห็นฟ้าเยอะๆ</span></li><li><span>ขาตั้งหรือพิงถุงกอล์ฟให้นิ่ง ห่างลูก 2–4 ม. สูงราวเอว</span></li><li><span>สโลว์โมชัน (120/240 fps) ตามลูกได้ไกลกว่า · นำเข้าแล้วเลือก "คลิปสโลว์โมชัน"</span></li></ul>`;
   function userCarry(club) { const r = P.bagTable(D.balls, D.bag).find(x => x.c === club); return r && r.s.nd >= 3 ? r.s.carry : null; }
@@ -555,34 +578,38 @@ export function createPractice(root, ctx) {
     const m = live.m, v0 = live.v; if (!m || !v0 || live.trBusy) return;
     const L0 = live, alive = () => live === L0 && V.page === 'swing', el = root.querySelector('#trbody');
     L0.trBusy = true; stopOver();
-    const prog = (p, msg) => { if (el && alive()) { el.className = ''; el.innerHTML = `<p class="muted" style="margin:0 0 6px">${ctx.tr(msg)}</p><div class="trbar"><i style="width:${Math.round(p * 100)}%"></i></div>`; } };
+    const t0 = Date.now(), BUDGET = 150e3, stop = () => !alive() || L0.trCancel || Date.now() - t0 > BUDGET;
+    const prog = (p, msg) => { if (el && alive()) { el.className = ''; el.innerHTML = `<p class="muted" style="margin:0 0 6px">${ctx.tr(msg)} <span style="float:right">${Math.round((Date.now() - t0) / 1000)} ${ctx.tr('วิ')}</span></p><div class="trbar"><i style="width:${Math.round(p * 100)}%"></i></div><button class="btn sec full" data-pa="trcancel" style="margin-top:8px">${ctx.tr('✖ ยกเลิก')}</button>`; } };
     prog(0.02, 'กำลังเตรียม...');
-    const vid = document.createElement('video'); vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+    const vid = workVideo();
     let res;
     try {
-      await loadVid(vid, null, v0.src);
+      await loadVid(vid, null, v0.src); await prime(vid);
       const d = dur(vid), slow = m.slow || 1, Wv = vid.videoWidth, Hv = vid.videoHeight; if (!d || !Wv) throw new Error('video');
       const s = 480 / Math.max(Wv, Hv), W = Math.round(Wv * s), H = Math.round(Hv * s), cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-      const g = cv.getContext('2d', { willReadFrequently: true });
-      const grab = async t => { vid.currentTime = Math.max(0, Math.min(d - 0.001, t)); await new Promise(r => { let ok = false; const h = () => { if (ok) return; ok = true; vid.removeEventListener('seeked', h); r(); }; vid.addEventListener('seeked', h); setTimeout(h, 2000); });
-        g.drawImage(vid, 0, 0, W, H); return Tr.toGray(g.getImageData(0, 0, W, H).data, W, H); };
-      const coarse = async () => { const N = Math.min(70, Math.max(12, Math.ceil(d * 14))), cf = [];
-        for (let k = 0; k < N; k++) { if (!alive()) return null; cf.push({ g: await grab(d * k / (N - 1)), W, H, t: d * k / (N - 1) }); prog(0.04 + 0.2 * k / N, 'กำลังหาจังหวะตีลูก...'); }
-        return Tr.coarseImpact(cf); };
+      const g = cv.getContext('2d', { willReadFrequently: true }), snap = () => { g.drawImage(vid, 0, 0, W, H); return Tr.toGray(g.getImageData(0, 0, W, H).data, W, H); };
+      const grab = async t => { await seekTo(vid, Math.max(0, Math.min(d - 0.001, t))); return snap(); };
+      const rvfc = hasRVFC() && !K_NOPLAY;
+      const coarse = async () => { const cf = [], N = Math.min(70, Math.max(12, Math.ceil(d * 14)));
+        if (rvfc) await playGrab(vid, 0, d, 2, d / N, t => { cf.push({ g: snap(), W, H, t }); prog(0.04 + 0.2 * Math.min(1, t / d), 'กำลังหาจังหวะตีลูก...'); }, stop);
+        if (!rvfc || (cf.length < 8 && !stop())) for (let k = cf.length = 0; k < N && !stop(); k++) { cf.push({ g: await grab(d * k / (N - 1)), W, H, t: d * k / (N - 1) }); prog(0.04 + 0.2 * k / N, 'กำลังหาจังหวะตีลูก...'); }
+        return stop() ? null : Tr.coarseImpact(cf); };
       const fine = async imp => {
-        const times = []; for (let r = -0.6; r < -0.16; r += 0.05) times.push(r);
-        const dtc = slow > 1 ? Math.max(1 / 30, slow / 120) : 1 / 60; for (let c = imp - 0.16 * slow; c <= imp + 1.6 * slow; c += dtc) times.push((c - imp) / slow);
-        const frames = []; let prev = null;
-        for (let k = 0; k < times.length; k++) { if (!alive()) return null; const c = imp + times[k] * slow; if (c < 0 || c > d) continue;
-          const gr = await grab(c); if (prev && times[k] > -0.16 && sameFrame(prev, gr)) continue;   // เฟรมซ้ำ (คลิป 30 fps แต่ดึงทุก 1/60 วิ)
-          frames.push({ g: gr, W, H, t: times[k] }); prev = gr; if (k % 4 === 0) prog(0.25 + 0.65 * k / times.length, 'กำลังตามลูก...'); }
+        const frames = []; let prev = null; const c0 = Math.max(0, imp - 0.6 * slow), c1 = Math.min(d, imp + 1.6 * slow), dtc = slow > 1 ? Math.max(1 / 30, slow / 120) : 1 / 60;
+        const add = (c, gr) => { const t = (c - imp) / slow; if (prev && t > -0.16 && sameFrame(prev, gr)) return; frames.push({ g: gr, W, H, t }); prev = gr; prog(0.25 + 0.65 * Math.min(1, (c - c0) / ((c1 - c0) || 1)), 'กำลังตามลูก...'); };
+        if (rvfc) await playGrab(vid, c0, c1, slow > 1 ? 1 : 0.5, dtc * 0.9, c => add(c, snap()), stop);
+        if (!rvfc || (frames.length < 20 && !stop())) { frames.length = 0; prev = null;   // เล่นแล้วได้ภาพน้อยเกิน → ดึงทีละเฟรมแทน
+          const times = []; for (let r = -0.6; r < -0.16; r += 0.05) times.push(imp + r * slow); for (let c = imp - 0.16 * slow; c <= c1; c += dtc) times.push(c);
+          for (const c of times) { if (stop()) break; if (c < 0 || c > d) continue; add(c, await grab(c)); } }
+        if (stop()) return null;
         prog(0.93, 'กำลังคำนวณวิถีลูก...'); await new Promise(r => setTimeout(r, 30));
         const own = userCarry(m.club), r = Tr.analyze(frames, { club: m.club, carry: own }); r.imp = imp + (r.ti || 0) * slow; r.own = own != null; return r; };
       let imp = m.tags?.imp;
       if (imp != null) res = await fine(imp);
       if (alive() && (imp == null || (res && !res.ok && res.why !== 'fit'))) { const ci = await coarse(); if (ci != null && (imp == null || Math.abs(ci - imp) > 0.05 * slow)) res = await fine(ci); else if (!res) res = { ok: false, why: 'ball' }; }
     } catch (e) { res = { ok: false, why: 'clip' }; }
-    L0.trBusy = false; vid.removeAttribute('src'); vid.load?.();
+    L0.trBusy = false; vid.pause(); vid.removeAttribute('src'); vid.load?.(); vid.remove();
+    if (alive() && (L0.trCancel || Date.now() - t0 > BUDGET)) { L0.trCancel = false; const slowRun = Date.now() - t0 > BUDGET; if (slowRun) await updM(x => { x.trace = { ok: false, why: 'slow', at: Date.now() }; }); trBody(); if (!slowRun) toast(ctx.tr('ยกเลิกแล้ว')); return; }
     if (!res || !alive()) return;
     const keep = res.ok ? { ok: true, imp: res.imp, est: res.est, path: res.path, track: res.track, seen: res.seen, n: res.n, rms: +res.rms.toFixed(2), club: m.club, own: !!res.own, at: Date.now() } : { ok: false, why: res.why, at: Date.now() };
     await updM(x => { x.trace = keep; }); trBody(); paint(live.v, root.querySelector('#ov'), m.draw);
@@ -593,7 +620,7 @@ export function createPractice(root, ctx) {
     const m = live.m, v0 = live.v, tr = m?.trace; if (!tr?.ok || !v0 || live.exp) return;
     const Rc = window.MediaRecorder, mime = pickMime(); if (!Rc || !HTMLCanvasElement.prototype.captureStream) return toast('เบราว์เซอร์นี้บันทึกวิดีโอไม่ได้');
     const L0 = live, b = root.querySelector('#trexp'); L0.exp = true; if (b) { b.disabled = true; b.textContent = ctx.tr('⏺ กำลังบันทึก... (เล่นคลิป 1 รอบ)'); }
-    const vid = document.createElement('video'); vid.muted = true; vid.playsInline = true; vid.preload = 'auto';
+    const vid = workVideo();
     try {
       await loadVid(vid, null, v0.src); const d = dur(vid), slow = m.slow || 1, sc = Math.min(1, 1080 / Math.max(vid.videoWidth, vid.videoHeight));
       const W = Math.round(vid.videoWidth * sc / 2) * 2, H = Math.round(vid.videoHeight * sc / 2) * 2, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -613,7 +640,7 @@ export function createPractice(root, ctx) {
       else { const a = document.createElement('a'), u = URL.createObjectURL(blob); a.href = u; a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); }
       live.lastExport = blob.size; toast(ctx.tr('บันทึกคลิปพร้อมเส้นแล้ว ✓'));
     } catch (e) { toast('บันทึกคลิปไม่ได้'); }
-    L0.exp = false; vid.pause(); vid.removeAttribute('src'); if (live === L0) trBody();
+    L0.exp = false; vid.pause(); vid.removeAttribute('src'); vid.remove(); if (live === L0) trBody();
   }
 
   /* ---------- เทียบ 2 คลิป (ซิงค์ที่ป้าย "กระทบ") ---------- */
@@ -879,6 +906,7 @@ export function createPractice(root, ctx) {
       case 'jump': { const vd = live.v, x = live.m?.tags?.[v]; if (!vd || x == null) return; vd.pause(); vd.currentTime = x; return; }
       case 'tool': { V.tool = v; root.querySelectorAll('[data-pa=tool]').forEach(b => b.classList.toggle('on', b.dataset.v === v)); const cv = root.querySelector('#ov'); if (cv) { cv.style.pointerEvents = v === 'view' ? 'none' : 'auto'; if (v !== 'view') cv.scrollIntoView({ block: 'center' }); } return; }
       case 'trrun': runTrace(); return;
+      case 'trcancel': if (live.trBusy) { live.trCancel = true; t.disabled = true; t.textContent = ctx.tr('กำลังยกเลิก...'); } return;
       case 'trdtl': await updM(x => { x.view = 'dtl'; delete x.trace; }); runTrace(); return;
       case 'trshow': V.trOff = !V.trOff; stopOver(); trBody(); if (live.v) paint(live.v, root.querySelector('#ov'), live.m?.draw); return;
       case 'trexp': exportTrace(); return;

@@ -81,7 +81,7 @@ module.exports = async t => {
   await p.selectOption('[data-pi=swslow]', '4'); await p.selectOption('[data-pi=swclub]', '7i');
   await p.tap('#trbody [data-pa=trdtl]');
   await p.waitForSelector('#trbody .trbar', { timeout: 10000 }).catch(() => {});
-  t.ok('tracer starts by itself with a progress bar (no tapping on the ball)', !!(await p.$('#trbody .trbar')) || !!(await p.$('#trbody .trst')));
+  t.ok('tracer starts by itself with a progress bar and a cancel button (no tapping on the ball)', (!!(await p.$('#trbody .trbar')) && !!(await p.$('#trbody [data-pa=trcancel]'))) || !!(await p.$('#trbody .trst')));
   await p.waitForFunction(() => document.querySelector('#trbody .trst') || document.querySelector('#trbody [data-pa=trrun]'), null, { timeout: 120000 }).catch(() => {});
   const st = await p.$$eval('#trbody .trst b', a => a.map(e => e.textContent)).catch(() => []);
   const ct = await p.textContent('#trbody .trcarry').catch(() => '');
