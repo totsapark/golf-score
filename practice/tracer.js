@@ -377,7 +377,7 @@ export function analyze(frames, o = {}) {
       obs.reduce((a, q) => a + (q.p ?? 0.5), 0) / obs.length, Math.min(...obs.map(q => q.p ?? 0.5)), h.out ? 1 : 0, ball.r, Math.log(dtf), Math.log1p(hyps.length), obs[0].t, fit.p.dir / 10, fit.p.tilt / 20];
     // เส้นนี้น่าเชื่อไหม: โมเดลที่ฝึกจากคลิปจำลอง (ถ้ามี) · ไม่งั้นกฎตายตัว (ฟิตเข้ากับจุดที่เห็น + มุมออกไม่ต่ำผิดปกติ)
     const plaus0 = fit.fa / obs.length <= (K.fmax ?? 1.2) && fit.fp <= (K.pmax ?? 25) && fit.p.la - pr0.la >= -20, pm = MODEL.track && K.tmodel !== false ? mlp(MODEL.track, feat) : null;
-    const tm = K.tmode ?? 'or', plaus = pm == null ? plaus0 : tm === 'select' ? plaus0 : tm === 'or' ? plaus0 || pm >= (K.tau ?? 0.99) : tm === 'mix' ? (plaus0 && pm >= (K.veto ?? 0.05)) || pm >= (K.tau ?? 0.99) : tm === 'and' ? plaus0 && pm >= (K.tau ?? 0.3) : pm >= (K.tau ?? 0.5);
+    const tm = K.tmode ?? 'mix', plaus = pm == null ? plaus0 : tm === 'select' ? plaus0 : tm === 'or' ? plaus0 || pm >= (K.tau ?? 0.99) : tm === 'mix' ? (plaus0 && pm >= (K.veto ?? 0.5)) || pm >= (K.tau ?? 0.99) : tm === 'and' ? plaus0 && pm >= (K.tau ?? 0.3) : pm >= (K.tau ?? 0.5);
     const q = fit.rms / (1.5 + ball.r * 0.5), sc = (pm != null ? pm * 100 : obs.length / (1 + q * q)) + (plaus ? 1000 : 0);
     if (o.all) allc.push({ feat, path: fit.path.map(p => ({ t: p.t, x: p.x, y: p.y, z: p.z })), seen: span0, est: { carry: fit.carry, side: fit.side, apex: fit.apex, speed: fit.p.v0 } });
     if (!best || sc > best.sc) best = { sc, fit, obs, h, plaus, pm };
