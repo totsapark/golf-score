@@ -1,5 +1,5 @@
 // ซ้อมกอล์ฟ service worker: ดึงจากเน็ตก่อน ถ้าไม่มีเน็ตหรือช้าเกิน 3 วินาที ใช้สำเนาในเครื่อง
-const C = 'golfpractice-v6';
+const C = 'golfpractice-v7';
 const SHELL = ['./', './index.html', './app.js', './practice.js', './core.js', './vision.js', './tracer.js', './tracer-model.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x.startsWith('golfpractice') && x !== C).map(x => caches.delete(x))))); self.clients.claim(); });
