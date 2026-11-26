@@ -72,7 +72,8 @@ export function makeClip(seed, opt = {}) {
   // a few distance markers / other balls lying on the range (static white specks)
   for (let k = 0; k < 6; k++) { const x0 = U(0, W), y0 = U(vh + 3, H), rr = U(0.6, 2); for (let y = Math.floor(y0 - rr - 1); y <= y0 + rr + 1; y++) for (let x = Math.floor(x0 - rr - 1); x <= x0 + rr + 1; x++) if (x >= 0 && y >= 0 && x < W && y < H && Math.hypot(x - x0, y - y0) <= rr) bg[y * W + x] = U(200, 245); }
   // golfer standing to the side of the ball (closer to the camera than the ball)
-  const side = bx < W / 2 ? -1 : (r() < 0.5 ? -1 : 1), gx = bx + side * U(0.12, 0.2) * W, shirt = U(25, 225), pants = U(20, 190), shaftL = U(30, 200), clubL = U(35, 210);
+  // occl: golfer stands between the camera and the early flight (real down-the-line footage) → head/arms hide the ball at first
+  const r3 = rng(seed * 13 + 5), occl = opt.hard !== false && (opt.occl ?? r3() < 0.4), side = bx < W / 2 ? -1 : (r() < 0.5 ? -1 : 1), gx0 = U(0.12, 0.2), gx = bx + side * (occl ? 0.04 + 0.04 * r3() : gx0) * W, shirt = U(25, 225), pants = U(20, 190), shaftL = U(30, 200), clubL = U(35, 210);
   const sc = br / 4, hip = [gx, by - 55 * sc], sh = [gx, by - 120 * sc];
   const birds = Array.from({ length: Math.floor(U(0, 3.5)) }, () => ({ x: U(0, W), y: U(0, vh * 0.8), vx: U(-80, 80), vy: U(-20, 20), s: U(0.8, 2), L: light === 'night' ? U(40, 90) : U(10, 60) }));
   const walker = r() < 0.3 ? { x: U(0, W), y: vh + U(5, 30), vx: U(-25, 25), h: U(8, 18), L: U(30, 200) } : null;
@@ -104,12 +105,12 @@ export function makeClip(seed, opt = {}) {
     const ph = tt < -0.3 ? (tt + 0.65) / 0.35 * 0.5 : tt < 0 ? 0.5 + (tt + 0.3) / 0.3 * 0.5 : Math.min(2, 1 + tt / 0.35);
     const ang = ph <= 1 ? Math.PI * (1 - Math.cos(ph * Math.PI)) * 0.9 * (ph < 0.5 ? 1 : 1) : 0, armA = ph < 0.5 ? ph * 2 * 2.6 : ph < 1 ? 2.6 * (1 - (ph - 0.5) * 2) : -(ph - 1) * 2.8;
     const twist = Math.sin(armA) * 10 * sc;
-    for (let y = Math.floor(sh[1] - 22 * sc); y < by + 8 * sc; y++) for (let x = Math.floor(gx - 30 * sc); x < gx + 30 * sc; x++) {
+    const body = upper => { for (let y = Math.floor(sh[1] - 22 * sc); y < (upper ? hip[1] : by + 8 * sc); y++) for (let x = Math.floor(gx - 30 * sc); x < gx + 30 * sc; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue; const q = y * W + x;
       if (y > hip[1] && Math.abs(x - gx) < 14 * sc && Math.abs(Math.abs(x - gx) - 7 * sc) < 5 * sc) img[q] = pants;
       else if (y <= hip[1] && y > sh[1] && Math.abs(x - gx - twist * (hip[1] - y) / (hip[1] - sh[1])) < 16 * sc) img[q] = shirt;
       else if (Math.hypot(x - gx - twist, y - (sh[1] - 13 * sc)) < 9 * sc) img[q] = 60;
-    }
+    } }; body(false);
     const hands = [gx + twist - side * 18 * sc * Math.cos(armA), sh[1] + 45 * sc * Math.cos(armA) - 30 * sc * Math.sin(Math.abs(armA))];
     const head = [hands[0] + (bx - hands[0]) * Math.cos(armA) * 1 - side * 40 * sc * Math.sin(armA), hands[1] + (by - hands[1]) * Math.cos(armA) - 60 * sc * Math.abs(Math.sin(armA))];
     thick(img, sh, hands, 4 * sc, shirt); thick(img, hands, head, Math.max(0.6, 0.9 * sc), shaftL); disc(img, head[0], head[1], 9 * sc, clubL);
@@ -118,7 +119,9 @@ export function makeClip(seed, opt = {}) {
     // ball: on the tee before impact, then flying (motion blur over the shutter time)
     const tr = tt + audioErr;   // true time since impact
     if (tr < 0 || kind === 'whiff') disc(img, bx, by, br, ballL);
+    else if (kind === 'unseen') {}   // ball too faint to see in flight (tests the "can't follow" path)
     else { const n = 8; for (let s = 0; s < n; s++) { const ts = Math.max(0, tr - shutter / 2 + shutter * (s + 0.5) / n), [u, v, z] = C.proj(posAt(fl, ts)); if (z > 0.3) disc(img, u, v, C.f * R / z, flyL, 1 / n * (n - s) / (n - s)); } }
+    if (occl) { body(true); thick(img, sh, hands, 4 * sc, shirt); }   // golfer in front of the ball
     if (other && tr > other.t0) { const P = posAt(other.fl, tr - other.t0), [u, v, z] = C.proj([P[0] + other.o[0], P[1], P[2] + other.o[2]]); if (z > 0.5) disc(img, u, v, C.f * R / z, ballL * 0.95); }
     for (const b of birds) disc(img, b.x + b.vx * tt, b.y + b.vy * tt + Math.sin(tt * 30) * 1.5, b.s, b.L);
     if (walker) { const x0 = walker.x + walker.vx * tt; for (let y = Math.floor(walker.y - walker.h); y < walker.y; y++) for (let x = Math.floor(x0 - walker.h * 0.18); x < x0 + walker.h * 0.18; x++) if (x >= 0 && y >= 0 && x < W && y < H) img[y * W + x] = walker.L; }
@@ -135,7 +138,7 @@ export function makeClip(seed, opt = {}) {
   // ground truth (image path until landing, px)
   const path = []; for (let t = 0; t <= fl.time + 1e-9; t += 0.02) { const [u, v] = C.proj(posAt(fl, t)); path.push({ t: t - audioErr, x: u, y: v }); }
   return { frames, truth: { ball: { x: bx, y: by, r: br }, path, carry: fl.carry, side: fl.side, apex: fl.apex, time: fl.time, speed: shot.v0, launch: shot.la, dir: shot.dir, club: cl[0], kind, impact: -audioErr },
-    meta: { W, H, fps, light, noise, portrait, birds: birds.length, walker: !!walker, other: !!other, darkBall: flyL !== ballL, clouds: !!clouds, leaves: !!leaves, shake: !!shake, soft: !!soft, cam: { hc: C.hc, f: C.f / Math.max(W, H), dc: C.dc } } };
+    meta: { W, H, fps, light, noise, portrait, birds: birds.length, walker: !!walker, other: !!other, occl, darkBall: flyL !== ballL, clouds: !!clouds, leaves: !!leaves, shake: !!shake, soft: !!soft, cam: { hc: C.hc, f: C.f / Math.max(W, H), dc: C.dc } } };
 }
 
 // compare a tracer result with the truth: mean image error along the whole flight (% of frame height), carry/side/apex errors

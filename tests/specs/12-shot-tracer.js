@@ -42,6 +42,8 @@ module.exports = async t => {
   t.ok('median line error < 2% of frame height', med(ok.map(r => r.shape)) < 2, med(ok.map(r => r.shape)));
   t.ok('while the ball is visible the track is within 2.5% (median)', med(ok.map(r => r.seen)) < 2.5, med(ok.map(r => r.seen)));
   t.ok('no tracer on a missed swing (ball stays on the tee)', fp === 0, fp + '/6');
+  { const { frames, truth } = Sy.makeClip(4244, { kind: 'unseen', fps: 60, light: 'overcast', portrait: true, club: '7i', hard: false }), r = Tr.analyzeAuto(frames.map(f => ({ ...f, c: f.t + 2 })), 2, { club: truth.club, debug: true });
+    t.ok('ball invisible in flight: no line, and a diagnostic snapshot per speed (ball found, moving spots)', !r.ok && r.dbgAll?.length === 3 && r.dbgAll.some(x => x.dbg?.ball && x.dbg.spots.length > 0), r.dbgAll?.map(x => [x.slow, x.why, x.dbg?.spots.length])); }
   // harder clips: moving clouds, leaves in the wind, camera shake, soft video → fewer lines, but almost never a wrong one
   const hard = []; for (let s = 7001; s <= 7100; s++) { const { frames, truth, meta } = Sy.makeClip(s, { kind: 'normal', hard: true }), res = Tr.analyze(frames, { club: truth.club }); res._W = meta.W; res._H = meta.H; hard.push(Sy.score(res, truth, meta.H)); }
   const hok = hard.filter(Boolean);

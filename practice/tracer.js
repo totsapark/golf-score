@@ -261,7 +261,7 @@ export function link(frames, ball, o = {}) {
         if (c.p != null) pen -= (K.pw ?? 4) * (c.p - 0.5);   // คะแนนจากโมเดล: ดูเหมือนลูกแค่ไหน
         if (n === 1) {   // จุดแรกหลังกระทบ: ต้องอยู่เหนือลูก ในกรวยแนวเป้า ไม่ไกลเกิน และไม่ช้าเกินลูกจริง
           const dy = c.y - ball.y, dx = c.x - ball.x, d = Math.hypot(dx, dy);
-          if (dy > -0.6 * r || Math.abs(dx) > 0.7 * -dy + 3 * r || d > 0.6 * H || fr.t > 0.12) continue;
+          if (dy > -0.6 * r || Math.abs(dx) > 0.7 * -dy + 3 * r || d > 0.6 * H || fr.t > (K.t1 ?? 0.12)) continue;
           if (d / fr.t < r * 200) continue;   // ลูกออกเร็วมาก (หัวไม้หลังกระทบช้ากว่าในภาพ)
         } else {
           const step = Math.hypot(pr[0] - L.x, pr[1] - L.y), gate = 3 + 1.5 * r + gs * step + 1.5 * h.miss, e = Math.hypot(c.x - pr[0], c.y - pr[1]);
@@ -337,6 +337,14 @@ export function fitFlight(obs, ball, W, H, o = {}) {
 /* ---------- ทั้งหมดในครั้งเดียว ---------- */
 // frames: เรียงตามเวลา, t = วินาทีจริงเทียบจังหวะกระทบโดยประมาณ (จากเสียง) · o.club, o.carry (ระยะของไม้นี้จากบันทึกซ้อม ม.)
 export function analyze(frames, o = {}) {
+  const r = analyze0(frames, o);
+  if (o.debug && r._dbg) { const { C, hyps, ball, W, H, dtf } = r._dbg, n = (x, y) => [+(x / W).toFixed(4), +(y / H).toFixed(4)];
+    r.dbg = { W, H, fps: Math.round(1 / dtf), nf: frames.length, ball: ball && { x: ball.x / W, y: ball.y / H, r: ball.r, c: ball.c }, ti: r.ti,
+      spots: C ? C.filter(c => c.t < 0.8).map(c => ({ t: +c.t.toFixed(3), l: c.list.slice(0, 8).map(b => [...n(b.x, b.y), +(b.p ?? 0).toFixed(2)]) })) : [],
+      tracks: (hyps || []).slice(0, 3).map(h => h.pts.filter(q => !q.o).map(q => [...n(q.x, q.y), +q.t.toFixed(3)])) }; }
+  delete r._dbg; return r;
+}
+function analyze0(frames, o = {}) {
   if (frames.length < 6) return { ok: false, why: 'clip' };
   const { W, H } = frames[0];
   const pre = frames.filter(f => f.t >= -0.6 && f.t <= -0.06), post = frames.filter(f => f.t >= 0.15 && f.t <= 0.7);
@@ -356,7 +364,8 @@ export function analyze(frames, o = {}) {
     C.push({ t: F[k].t, thr: c.thr, list: c.list });
   }
   const hyps = link(C, ball, { W, H, maxGap: Math.max(0.1, 3.5 * dtf * gap), B0: 40 * ball.r / (0.73 * Math.max(W, H) * BALL_R) });
-  if (!hyps.length) return { ok: false, why: 'track', ball, ti };
+  const _dbg = { C, hyps, ball, W, H, dtf };
+  if (!hyps.length) return { ok: false, why: 'track', ball, ti, _dbg };
   let best = null;
   const allc = [];
   for (const h of hyps.slice(0, K.nfit ?? 12)) {
@@ -383,13 +392,13 @@ export function analyze(frames, o = {}) {
     if (!best || sc > best.sc) best = { sc, fit, obs, h, plaus, pm };
   }
   if (o.all) return { ok: false, why: 'all', cands: allc };
-  if (!best) return { ok: false, why: 'track', ball, ti };
+  if (!best) return { ok: false, why: 'track', ball, ti, _dbg };
   const { fit, obs } = best, span = obs[obs.length - 1].t - obs[0].t;
   const dg = { n: obs.length, f: fit.fa / obs.length, fp: fit.fp, la: fit.p.la - (o.prior || prior(o.club)).la, pm: best.pm, span, rr: fit.rms / (1.5 + 0.6 * ball.r) };
-  if (!best.plaus) return { ok: false, why: 'fit', ball, ti, rms: fit.rms, diag: dg };
-  if ((best.pm == null && fit.rms > (1.5 + 0.6 * ball.r) * (obs.length >= 10 ? 1.6 : 1)) || span < 0.03 || obs.length < (K.nmin ?? 4)) return { ok: false, why: 'fit2', ball, ti, rms: fit.rms, diag: dg };
+  if (!best.plaus) return { ok: false, why: 'fit', ball, ti, rms: fit.rms, diag: dg, _dbg };
+  if ((best.pm == null && fit.rms > (1.5 + 0.6 * ball.r) * (obs.length >= 10 ? 1.6 : 1)) || span < 0.03 || obs.length < (K.nmin ?? 4)) return { ok: false, why: 'fit2', ball, ti, rms: fit.rms, diag: dg, _dbg };
   return {
-    ok: true, ball: { x: ball.x / W, y: ball.y / H, r: ball.r / W }, ti, dtf,
+    ok: true, _dbg, ball: { x: ball.x / W, y: ball.y / H, r: ball.r / W }, ti, dtf,
     track: obs.map(p => ({ t: +p.t.toFixed(4), x: +(p.x / W).toFixed(4), y: +(p.y / H).toFixed(4) })),
     path: fit.path.map(p => ({ t: +p.t.toFixed(3), x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(1) })),
     est: { speed: fit.p.v0, launch: fit.p.la, dir: fit.p.dir, spin: fit.p.spin, tilt: fit.p.tilt, carry: fit.carry, side: fit.side, apex: fit.apex, time: fit.time },
@@ -415,7 +424,9 @@ export function analyzeAuto(frames, imp, o = {}) {
     const r = analyze(fr, o); r.slow = s; out.push(r);
   }
   const ok = out.filter(r => r.ok), q = r => (r.diag?.pm ?? 0.5) * 2 + Math.min(1, r.n / 25) - Math.min(1, r.rms / 4);
-  return ok.length ? ok.sort((a, b) => q(b) - q(a))[0] : out.find(r => r.why !== 'clip') || out[0];
+  const best = ok.length ? ok.sort((a, b) => q(b) - q(a))[0] : out.find(r => r.why !== 'clip') || out[0];
+  if (o.debug) best.dbgAll = out.map(r => ({ slow: r.slow, why: r.ok ? 'ok' : r.why, n: r.n, dbg: r.dbg }));
+  return best;
 }
 
 // รูปทรงลูก (ถนัดขวา): ทิศออก + ความโค้ง → ชื่อเรียก

@@ -479,6 +479,7 @@ export function createPractice(root, ctx) {
     [...(shapes || []), ...(tmp ? [tmp] : [])].forEach(s => { const a = P2(s.a), b = P2(s.b); g.beginPath();
       if (s.t === 'line') { g.moveTo(...a); g.lineTo(...b); } else g.arc(a[0], a[1], Math.hypot(b[0] - a[0], b[1] - a[1]), 0, 7); g.stroke(); });
     const m = live.m; g.shadowBlur = 0;
+    if (cv.id === 'ov' && V.trDbgOn && live.trDbg) drawDbg(g, R, R.h / 560);
     if (cv.id === 'ov' && m?.trace?.ok && !V.trOff) drawTrace(g, R, m.trace, tOver ?? (v.currentTime - m.trace.imp) / (m.slow || 1), R.h / 560, m);
   }
   async function mountSwing() {
@@ -528,7 +529,7 @@ export function createPractice(root, ctx) {
     if (m.view !== 'dtl') { el.innerHTML = `<p class="muted" style="margin:0 0 8px">${ctx.tr('เส้นลูกใช้กับคลิปที่ถ่ายจากด้านหลังผู้ตี (down-the-line) เล็งไปทางเป้า')}</p><button class="btn full" data-pa="trdtl">${ctx.tr('🎯 คลิปนี้ถ่ายจากด้านหลัง · หาเส้นลูก')}</button>`; return; }
     const t = m.trace;
     if (!t) { el.innerHTML = `<button class="btn full" data-pa="trrun">${ctx.tr('🎯 หาเส้นลูก')}</button>`; return; }
-    if (!t.ok) { el.innerHTML = `<div class="cn" style="background:#fff3e0;margin-top:0"><span>🤔</span><div><b>${ctx.tr('หาเส้นลูกไม่ได้')}</b><br><span class="muted">${ctx.tr(TR_WHY[t.why] || TR_WHY.track)}</span></div></div>${TR_TIPS}<button class="btn sec full" data-pa="trrun">${ctx.tr('🔁 ลองหาใหม่')}</button>`; return; }
+    if (!t.ok) { el.innerHTML = `<div class="cn" style="background:#fff3e0;margin-top:0"><span>🤔</span><div><b>${ctx.tr('หาเส้นลูกไม่ได้')}</b><br><span class="muted">${ctx.tr(TR_WHY[t.why] || TR_WHY.track)}</span></div></div>${live.trDbg ? `<button class="btn full" data-pa="trdbg" style="margin-bottom:8px">${ctx.tr(V.trDbgOn ? '🙈 ปิดหน้าตรวจ' : '🔍 ดูว่าแอปเห็นอะไร (แคปหน้าจอส่งให้ผู้พัฒนา)')}</button>${V.trDbgOn ? dbgHtml() : ''}` : ''}${TR_TIPS}<button class="btn sec full" data-pa="trrun">${ctx.tr('🔁 ลองหาใหม่')}</button>`; return; }
     const e = t.est, sh = Tr.shapeOf(e, D.hand === 'L'), lr = x => ctx.tr(x < 0 ? 'ซ้าย' : 'ขวา');
     const out = Math.abs(e.dir) < 1 ? ctx.tr('ตรง') : lr(e.dir) + ' ' + Math.abs(e.dir).toFixed(0) + '°', land = Math.abs(e.side) < 2 ? ctx.tr('กลางแนวเป้า') : lr(e.side) + ' ' + toU(Math.abs(e.side)) + ' ' + ctx.tr(un());
     const bd = Tr.carryBand(e.carry, t.seen, t.own), r5 = x => Math.round(toU(x) / 5) * 5;
@@ -540,6 +541,25 @@ export function createPractice(root, ctx) {
       <div class="cn"><span>↪️</span><div><b>${ctx.tr(sh.name)}</b> · ${ctx.tr('ออก')}${out} · ${ctx.tr('ตก')}${land}<br><span class="muted">${m.slowAuto && (m.slow || 1) > 1 ? ctx.tr('ตรวจพบคลิปสโลว์') + ' ×' + m.slow + ' · ' : ''}${ctx.tr('ค่าประมาณจากกล้องมือถือ · เห็นลูกจริง')} ${t.seen.toFixed(2)} ${ctx.tr('วิแรก ที่เหลือคำนวณจากฟิสิกส์ลูกกอล์ฟ')}</span></div></div>
       <div class="grid2"><button class="btn sec" data-pa="trshow">${ctx.tr(V.trOff ? '👁 แสดงเส้น' : '🙈 ซ่อนเส้น')}</button><button class="btn sec" data-pa="trrun">${ctx.tr('🔁 หาใหม่')}</button></div>
       <button class="btn full" data-pa="trexp" style="margin-top:8px" id="trexp">${ctx.tr('💾 บันทึกคลิปพร้อมเส้น')}</button>`;
+  }
+  // หน้าตรวจ: แอปเห็นอะไร (ลูกที่ตั้ง จุดที่ขยับหลังตี เส้นที่ลองต่อ) — ไว้แคปหน้าจอส่งให้ผู้พัฒนาเมื่อหาเส้นไม่ได้
+  const WHY_S = { ok: 'เจอ', ball: 'ไม่เจอลูกที่ตั้ง', track: 'ต่อจุดเป็นเส้นไม่ได้', fit: 'เส้นไม่สมจริง', fit2: 'เห็นลูกสั้นไป', clip: 'คลิปไม่พอ' };
+  function dbgPick() { const a = live.trDbg?.all || []; return a.find(x => x.slow === V.trDbgS && x.dbg) || [...a].filter(x => x.dbg).sort((x, y) => (y.dbg.tracks.length - x.dbg.tracks.length) || (y.dbg.spots.length - x.dbg.spots.length))[0]; }
+  function dbgHtml() {
+    const D0 = live.trDbg, m = live.m, pk = dbgPick(), b = pk?.dbg?.ball, f = x => (x * 100).toFixed(1);
+    const rows = (D0.all || []).map(x => `<div>×${x.slow}: <b>${ctx.tr(WHY_S[x.why] || x.why)}</b>${x.dbg ? ` · ${ctx.tr('จุดขยับ')} ${x.dbg.spots.reduce((a, c) => a + c.l.length, 0)} · ${ctx.tr('เส้นที่ลอง')} ${x.dbg.tracks.length} · ${x.dbg.nf} ${ctx.tr('ภาพ')} ~${x.dbg.fps} fps` : ''}</div>`).join('');
+    return `<div class="dbgbox"><div>v${ctx.ver} · ${ctx.tr('คลิป')} ${D0.d.toFixed(1)} ${ctx.tr('วิ')} · ${D0.W}×${D0.H} · ${ctx.tr('จังหวะตี')} ${isFinite(D0.imp) ? D0.imp.toFixed(2) : '–'} ${ctx.tr('วิ')} (${ctx.tr(D0.src === 'sound' ? 'จากเสียง' : 'จากภาพ')}) · ${m.club} · ${ctx.tr('ด้านหลัง')}</div>
+      <div>${b ? `${ctx.tr('ลูกที่ตั้ง')} (${f(b.x)}%, ${f(b.y)}%) r ${b.r.toFixed(1)} px · ${ctx.tr('ต่างจากพื้น')} ${b.c}` : ctx.tr('ไม่เจอลูกที่ตั้ง')}</div>${rows}
+      ${pk ? `<div class="seg" style="margin-top:6px">${(D0.all || []).filter(x => x.dbg).map(x => `<button data-pa="trdbgs" data-v="${x.slow}" class="${x.slow === pk.slow ? 'on' : ''}">×${x.slow}</button>`).join('')}</div>` : ''}
+      <p class="muted" style="margin:6px 0 0">${ctx.tr('บนภาพ: วงเขียว = ลูกที่ตั้งที่แอปเจอ · จุดสี = สิ่งที่ขยับหลังตี (เหลือง = ทันทีหลังตี → ม่วง = 0.8 วิ, ใหญ่ = แอปคิดว่าน่าจะเป็นลูก) · เส้นฟ้า = เส้นทางที่ลองต่อ')}</p></div>`;
+  }
+  function drawDbg(g, R, k) {
+    const pk = dbgPick(); if (!pk) return; const d = pk.dbg, P = (x, y) => [R.x + x * R.w, R.y + y * R.h];
+    g.save(); g.shadowBlur = 0;
+    for (const c of d.spots) for (const [x, y, p] of c.l) { const [u, v] = P(x, y), h = 60 + 240 * Math.min(1, c.t / 0.8); g.fillStyle = `hsla(${h},100%,55%,0.85)`; g.beginPath(); g.arc(u, v, (1.5 + 4 * p) * k, 0, 7); g.fill(); }
+    g.strokeStyle = '#00e5ff'; g.lineWidth = 2 * k; for (const tr of d.tracks) { if (tr.length < 2) continue; g.beginPath(); tr.forEach(([x, y], i) => { const [u, v] = P(x, y); i ? g.lineTo(u, v) : g.moveTo(u, v); }); g.stroke(); }
+    if (d.ball) { const [u, v] = P(d.ball.x, d.ball.y); g.strokeStyle = '#00e676'; g.lineWidth = 2.5 * k; g.beginPath(); g.arc(u, v, Math.max(8 * k, d.ball.r * R.w / d.W * 3), 0, 7); g.stroke(); }
+    g.restore();
   }
   // วาดเส้น: เรืองแสงสีแดง บางลงตามระยะ · หัวเส้นเป็นจุดสว่างตอนลูกยังบิน · ลูกตกแล้วแสดงกล่องตัวเลข
   function drawTrace(g, R, tr, t, k, m) {
@@ -606,7 +626,8 @@ export function createPractice(root, ctx) {
           for (let c = c0; c <= c1 && !stop(); c += step(c)) add(c, await grab(c)); }
         if (stop()) return null;
         prog(0.9, scales.length > 1 ? 'กำลังคำนวณวิถีลูก (ลองทั้งความเร็วปกติและสโลว์)...' : 'กำลังคำนวณวิถีลูก...'); await new Promise(r => setTimeout(r, 30));
-        const own = userCarry(m.club), r = Tr.analyzeAuto(frames, imp, { club: m.club, carry: own, scales }); r.imp = imp + (r.ti || 0) * (r.slow || slow); r.own = own != null; return r; };
+        const own = userCarry(m.club), r = Tr.analyzeAuto(frames, imp, { club: m.club, carry: own, scales, debug: true });
+        L0.trDbg = { all: r.dbgAll, imp, d, W, H, nf: frames.length, src: m.tags?.imp != null && Math.abs(m.tags.imp - imp) < 1e-6 ? 'sound' : 'image', scales }; r.imp = imp + (r.ti || 0) * (r.slow || slow); r.own = own != null; return r; };
       let imp = m.tags?.imp;
       if (imp != null) res = await fine(imp);
       if (alive() && (imp == null || (res && !res.ok && res.why !== 'fit'))) { const ci = await coarse(); if (ci != null && (imp == null || Math.abs(ci - imp) > 0.2)) res = await fine(ci); else if (!res) res = { ok: false, why: 'ball' }; }
@@ -910,6 +931,8 @@ export function createPractice(root, ctx) {
       case 'jump': { const vd = live.v, x = live.m?.tags?.[v]; if (!vd || x == null) return; vd.pause(); vd.currentTime = x; return; }
       case 'tool': { V.tool = v; root.querySelectorAll('[data-pa=tool]').forEach(b => b.classList.toggle('on', b.dataset.v === v)); const cv = root.querySelector('#ov'); if (cv) { cv.style.pointerEvents = v === 'view' ? 'none' : 'auto'; if (v !== 'view') cv.scrollIntoView({ block: 'center' }); } return; }
       case 'trrun': runTrace(); return;
+      case 'trdbg': { V.trDbgOn = !V.trDbgOn; trBody(); const vd = live.v, Dg = live.trDbg; if (vd && Dg && V.trDbgOn) { vd.pause(); const pk = dbgPick(); vd.currentTime = Math.min(Dg.d - 0.05, Dg.imp + 0.3 * (pk?.slow || 1)); } else if (vd) paint(vd, root.querySelector('#ov'), live.m?.draw); return; }
+      case 'trdbgs': { V.trDbgS = +v; trBody(); const vd = live.v, Dg = live.trDbg; if (vd && Dg) { vd.pause(); vd.currentTime = Math.min(Dg.d - 0.05, Dg.imp + 0.3 * +v); } return; }
       case 'trcancel': if (live.trBusy) { live.trCancel = true; t.disabled = true; t.textContent = ctx.tr('กำลังยกเลิก...'); } return;
       case 'trdtl': await updM(x => { x.view = 'dtl'; delete x.trace; }); runTrace(); return;
       case 'trshow': V.trOff = !V.trOff; stopOver(); trBody(); if (live.v) paint(live.v, root.querySelector('#ov'), live.m?.draw); return;
