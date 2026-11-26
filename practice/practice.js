@@ -465,7 +465,7 @@ export function createPractice(root, ctx) {
     return new Promise(res => {
       let last = -1e9, done = false; const fin = () => { if (done) return; done = true; clearTimeout(to); v.pause(); v.onended = null; res(); };
       const cb = (now, md) => { if (done) return; if (stop()) return fin(); const t = md?.mediaTime ?? v.currentTime;
-        if (t >= c0 - 1e-3 && t - last >= keepDt - 1e-4) { last = t; onFrame(t); } if (t >= c1 || v.ended) return fin(); v.requestVideoFrameCallback(cb); };
+        if (t >= c0 - 1e-3 && t - last >= (typeof keepDt === 'function' ? keepDt(t) : keepDt) * 0.9 - 1e-4) { last = t; onFrame(t); } if (t >= c1 || v.ended) return fin(); v.requestVideoFrameCallback(cb); };
       const to = setTimeout(fin, ((c1 - c0) / rate + 10) * 1000);
       v.onended = fin; v.requestVideoFrameCallback(cb); v.playbackRate = rate; v.play().catch(() => setTimeout(() => { if (!done) v.play().catch(fin); }, 300));
     });
@@ -537,7 +537,7 @@ export function createPractice(root, ctx) {
         ${t.own ? `<p>${ctx.tr('ใช้ระยะเฉลี่ยของไม้นี้จากบันทึกซ้อมช่วยคำนวณ')}</p>` : `<p>${ctx.tr('แม่นขึ้นมาก (±10%) ถ้าจดระยะไม้นี้ในหน้า "ซ้อมไดรฟ์" อย่างน้อย 3 ลูก')}</p>`}</div>
       <div class="trst"><div><b>${Math.round(e.speed * 2.237)}</b><small>${ctx.tr('ความเร็วลูก')} (mph)</small></div><div><b>${toU(e.carry)}</b><small>carry (${ctx.tr(un())})</small></div>
         <div><b>${toU(e.apex)}</b><small>${ctx.tr('สูงสุด')} (${ctx.tr(un())})</small></div><div><b>${e.launch.toFixed(0)}°</b><small>${ctx.tr('มุมออก')}</small></div></div>
-      <div class="cn"><span>↪️</span><div><b>${ctx.tr(sh.name)}</b> · ${ctx.tr('ออก')}${out} · ${ctx.tr('ตก')}${land}<br><span class="muted">${ctx.tr('ค่าประมาณจากกล้องมือถือ · เห็นลูกจริง')} ${t.seen.toFixed(2)} ${ctx.tr('วิแรก ที่เหลือคำนวณจากฟิสิกส์ลูกกอล์ฟ')}</span></div></div>
+      <div class="cn"><span>↪️</span><div><b>${ctx.tr(sh.name)}</b> · ${ctx.tr('ออก')}${out} · ${ctx.tr('ตก')}${land}<br><span class="muted">${m.slowAuto && (m.slow || 1) > 1 ? ctx.tr('ตรวจพบคลิปสโลว์') + ' ×' + m.slow + ' · ' : ''}${ctx.tr('ค่าประมาณจากกล้องมือถือ · เห็นลูกจริง')} ${t.seen.toFixed(2)} ${ctx.tr('วิแรก ที่เหลือคำนวณจากฟิสิกส์ลูกกอล์ฟ')}</span></div></div>
       <div class="grid2"><button class="btn sec" data-pa="trshow">${ctx.tr(V.trOff ? '👁 แสดงเส้น' : '🙈 ซ่อนเส้น')}</button><button class="btn sec" data-pa="trrun">${ctx.tr('🔁 หาใหม่')}</button></div>
       <button class="btn full" data-pa="trexp" style="margin-top:8px" id="trexp">${ctx.tr('💾 บันทึกคลิปพร้อมเส้น')}</button>`;
   }
@@ -594,26 +594,30 @@ export function createPractice(root, ctx) {
         if (rvfc) await playGrab(vid, 0, d, 2, d / N, t => { cf.push({ g: snap(), W, H, t }); prog(0.04 + 0.2 * Math.min(1, t / d), 'กำลังหาจังหวะตีลูก...'); }, stop);
         if (!rvfc || (cf.length < 8 && !stop())) for (let k = cf.length = 0; k < N && !stop(); k++) { cf.push({ g: await grab(d * k / (N - 1)), W, H, t: d * k / (N - 1) }); prog(0.04 + 0.2 * k / N, 'กำลังหาจังหวะตีลูก...'); }
         return stop() ? null : Tr.coarseImpact(cf); };
+      // ช่วงรอบจังหวะกระทบ · ถ้าผู้ใช้ไม่ได้เลือกความเร็วคลิปเอง ให้ลองทั้งปกติ / สโลว์ ×4 / ×8 (คลิปสโลว์โมชันจาก iPhone)
       const fine = async imp => {
-        const frames = []; let prev = null; const c0 = Math.max(0, imp - 0.6 * slow), c1 = Math.min(d, imp + 1.6 * slow), dtc = slow > 1 ? Math.max(1 / 30, slow / 120) : 1 / 60;
-        const add = (c, gr) => { const t = (c - imp) / slow; if (prev && t > -0.16 && sameFrame(prev, gr)) return; frames.push({ g: gr, W, H, t }); prev = gr; prog(0.25 + 0.65 * Math.min(1, (c - c0) / ((c1 - c0) || 1)), 'กำลังตามลูก...'); };
-        if (rvfc) await playGrab(vid, c0, c1, slow > 1 ? 1 : 0.5, dtc * 0.9, c => add(c, snap()), stop);
+        const scales = m.slowSet ? [slow] : [...new Set([slow, 1, 4, 8])], Smax = Math.max(...scales);
+        const c0 = Math.max(0, imp - 0.6 * Smax), c1 = Math.min(d, imp + Math.max(...scales.map(s => Tr.POST(s) * s)));
+        const step = c => scales.includes(1) && c >= imp - 0.2 && c <= imp + 1.7 ? 1 / 60 : 1 / 30;   // ความเร็วปกติต้องการภาพถี่ · คลิปสโลว์เก็บไว้ 30 ภาพ/วิ อยู่แล้ว
+        const frames = []; let prev = null;
+        const add = (c, gr) => { if (prev && sameFrame(prev, gr)) return; frames.push({ g: gr, W, H, c }); prev = gr; prog(0.25 + 0.6 * Math.min(1, (c - c0) / ((c1 - c0) || 1)), 'กำลังตามลูก...'); };
+        if (rvfc) await playGrab(vid, c0, c1, 1, step, c => add(c, snap()), stop);
         if (!rvfc || (frames.length < 20 && !stop())) { frames.length = 0; prev = null;   // เล่นแล้วได้ภาพน้อยเกิน → ดึงทีละเฟรมแทน
-          const times = []; for (let r = -0.6; r < -0.16; r += 0.05) times.push(imp + r * slow); for (let c = imp - 0.16 * slow; c <= c1; c += dtc) times.push(c);
-          for (const c of times) { if (stop()) break; if (c < 0 || c > d) continue; add(c, await grab(c)); } }
+          for (let c = c0; c <= c1 && !stop(); c += step(c)) add(c, await grab(c)); }
         if (stop()) return null;
-        prog(0.93, 'กำลังคำนวณวิถีลูก...'); await new Promise(r => setTimeout(r, 30));
-        const own = userCarry(m.club), r = Tr.analyze(frames, { club: m.club, carry: own }); r.imp = imp + (r.ti || 0) * slow; r.own = own != null; return r; };
+        prog(0.9, scales.length > 1 ? 'กำลังคำนวณวิถีลูก (ลองทั้งความเร็วปกติและสโลว์)...' : 'กำลังคำนวณวิถีลูก...'); await new Promise(r => setTimeout(r, 30));
+        const own = userCarry(m.club), r = Tr.analyzeAuto(frames, imp, { club: m.club, carry: own, scales }); r.imp = imp + (r.ti || 0) * (r.slow || slow); r.own = own != null; return r; };
       let imp = m.tags?.imp;
       if (imp != null) res = await fine(imp);
-      if (alive() && (imp == null || (res && !res.ok && res.why !== 'fit'))) { const ci = await coarse(); if (ci != null && (imp == null || Math.abs(ci - imp) > 0.05 * slow)) res = await fine(ci); else if (!res) res = { ok: false, why: 'ball' }; }
+      if (alive() && (imp == null || (res && !res.ok && res.why !== 'fit'))) { const ci = await coarse(); if (ci != null && (imp == null || Math.abs(ci - imp) > 0.2)) res = await fine(ci); else if (!res) res = { ok: false, why: 'ball' }; }
     } catch (e) { res = { ok: false, why: 'clip' }; }
     L0.trBusy = false; vid.pause(); vid.removeAttribute('src'); vid.load?.(); vid.remove();
     if (alive() && (L0.trCancel || Date.now() - t0 > BUDGET)) { L0.trCancel = false; const slowRun = Date.now() - t0 > BUDGET; if (slowRun) await updM(x => { x.trace = { ok: false, why: 'slow', at: Date.now() }; }); trBody(); if (!slowRun) toast(ctx.tr('ยกเลิกแล้ว')); return; }
     if (!res || !alive()) return;
+    if (res.ok && res.slow && res.slow !== (m.slow || 1)) { const sl = res.slow; await updM(x => { x.slow = sl; x.slowAuto = true; }); const se = root.querySelector('[data-pi=swslow]'); if (se) se.value = String(sl); showTags(); }
     const keep = res.ok ? { ok: true, imp: res.imp, est: res.est, path: res.path, track: res.track, seen: res.seen, n: res.n, rms: +res.rms.toFixed(2), club: m.club, own: !!res.own, at: Date.now() } : { ok: false, why: res.why, at: Date.now() };
     await updM(x => { x.trace = keep; }); trBody(); paint(live.v, root.querySelector('#ov'), m.draw);
-    if (keep.ok) { toast(ctx.tr('🎯 เจอเส้นลูกแล้ว · กด ▶️ ดู')); if (force !== false) { live.v.currentTime = Math.max(0, keep.imp - 0.4 * (m.slow || 1)); } }
+    if (keep.ok) { toast(ctx.tr(m.slowAuto && (m.slow || 1) > 1 ? `🎯 เจอเส้นลูกแล้ว · ตรวจพบคลิปสโลว์ ×${m.slow}` : '🎯 เจอเส้นลูกแล้ว · กด ▶️ ดู')); if (force !== false) { live.v.currentTime = Math.max(0, keep.imp - 0.4 * (m.slow || 1)); } }
   }
   // บันทึกคลิปใหม่ที่มีเส้นลูกฝังอยู่ (เล่นคลิป 1 รอบแล้วอัดจาก canvas)
   async function exportTrace() {
@@ -941,7 +945,7 @@ export function createPractice(root, ctx) {
     if (k === 'note') { (D.setup[V.setupK] = D.setup[V.setupK] || {}).note = t.value.trim(); save(); toast('บันทึกแล้ว ✓'); }
     if (k === 'camclub') V.club = t.value;
     if (k === 'swclub') updM(x => { x.club = t.value; }).then(() => { root.querySelector('#swh').textContent = `${t.value} · ${fmtD(live.m.t)}`; if (live.m.trace?.ok) toast(ctx.tr('เปลี่ยนไม้แล้ว · กด 🔁 หาใหม่ เพื่อคำนวณเส้นลูกตามไม้นี้')); });
-    if (k === 'swslow') updM(x => { x.slow = +t.value; if (x.trace) delete x.trace; }).then(() => { showTags(); trBody(); if (live.m.view === 'dtl') runTrace(); });
+    if (k === 'swslow') updM(x => { x.slow = +t.value; x.slowSet = true; x.slowAuto = false; if (x.trace) delete x.trace; }).then(() => { showTags(); trBody(); if (live.m.view === 'dtl') runTrace(); });
     if (k === 'swnote') updM(x => { x.note = t.value.trim(); });
     if (k === 'cmpwith') { V.cmpId = t.value; go('cmp'); }
   }

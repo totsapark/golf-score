@@ -102,6 +102,13 @@ module.exports = async t => {
   const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 90000 }).catch(() => null), p.tap('#trexp')]);
   const size = dl ? (await require('fs').promises.stat(await dl.path())).size : 0;
   t.ok('export: new video file with the tracer burned in', size > 20000, size);
+  // slow-motion clip imported without choosing its speed → the app works it out (×4) by itself
+  await p.tap('[data-pa=go][data-v=swings]'); await p.waitForSelector('#impvid', { state: 'attached' });
+  await p.setInputFiles('#impvid', { name: 'shot2.webm', mimeType: 'video/webm', buffer: Buffer.from(b64, 'base64') });
+  await p.waitForSelector('#trbody [data-pa=trdtl]', { timeout: 20000 }); await p.selectOption('[data-pi=swclub]', '7i'); await p.tap('#trbody [data-pa=trdtl]');
+  await p.waitForFunction(() => document.querySelector('#trbody .trst') || document.querySelector('#trbody [data-pa=trrun]'), null, { timeout: 180000 }).catch(() => {});
+  const auto = await p.evaluate(() => new Promise(res => { const r = indexedDB.open('golfpractice-swings', 1); r.onsuccess = () => { const q = r.result.transaction('meta').objectStore('meta').getAll(); q.onsuccess = () => res(q.result.sort((a, b) => b.t - a.t)[0]); }; }));
+  t.ok('slow-motion speed detected automatically (×4) and the line found', auto?.trace?.ok && auto.slow === 4 && auto.slowAuto === true && (await p.inputValue('[data-pi=swslow]')) === '4', auto && { slow: auto.slow, auto: auto.slowAuto, trace: auto.trace?.ok, why: auto.trace?.why });
   t.ok('no page errors', !errs.length, errs);
   await ctx.close();
 };

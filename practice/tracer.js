@@ -203,7 +203,8 @@ export function candidates(p, c, n, o = {}) {
   let out = blobs(m, val, W, H, maxN).filter(bl => bl.minor <= maxW && bl.major <= Math.max(maxW * 6, 0.25 * H));
   // ลูกสีขาว: ตรงที่ลูกผ่าน ความสว่างต้องเปลี่ยนไปทางสีลูก (พื้นมืดกว่าลูก → ต้องสว่างขึ้น) ของมืดที่ผ่านพื้นมืดจึงไม่ใช่ลูก
   for (const bl of out) { const q = Math.min(H - 1, Math.floor(bl.y)) * W + Math.min(W - 1, Math.floor(bl.x)); bl.bg = (a[q] + b[q]) / 2; bl.dv = g[q] - bl.bg; }
-  if (o.ballL != null) out = out.filter(bl => { const ex = o.ballL - bl.bg; return !(Math.abs(ex) > 25 && bl.dv * ex < 0 && Math.abs(bl.dv) > thr * 0.6); });
+  // ลูกที่ลอยอยู่: หน้าฉากหลังมืด (ต้นไม้) ต้องดูสว่างขึ้น · หน้าฟ้าสว่างอาจดูเป็นจุดเข้มได้ (ย้อนแสง/ฟ้าครึ้ม — เจอในคลิปจริง)
+  if (o.ballL != null) out = out.filter(bl => !(bl.bg < Math.min(140, o.ballL - 40) && bl.dv < 0 && -bl.dv > thr * 0.6));
   // จัดอันดับ: โมเดลที่ฝึกจากคลิปจำลอง (ลูก vs สิ่งรบกวน) ถ้ามี · ไม่งั้นใช้ความแรงของจุด
   if (o.ball && MODEL.cand && K.model !== false) { for (const bl of out) bl.p = mlp(MODEL.cand, candFeat(bl, thr, o.ball, o.t, W, H)); out.sort((x, y) => y.p - x.p); }
   else out.sort((x, y) => y.s - x.s);
@@ -401,6 +402,20 @@ export function analyze(frames, o = {}) {
 export function carryBand(carry, seen, own) {
   const pct = own ? (seen < 0.35 ? 0.13 : 0.11) : seen < 0.1 ? 0.4 : seen < 0.35 ? 0.3 : 0.19;
   return { lo: carry * (1 - pct), hi: carry * (1 + pct), pct, sure: pct <= 0.2 };
+}
+
+// ไม่รู้ว่าคลิปสโลว์กี่เท่า (คลิปสโลว์โมชันจาก iPhone: 120 fps = ×4, 240 fps = ×8): ลองทุกแบบแล้วเลือกวิถีที่สมจริงสุด
+// frames: [{ g, W, H, c }] c = วินาทีในคลิป · imp = จังหวะกระทบ (วินาทีในคลิป)
+export const POST = s => s >= 8 ? 1.0 : 1.6;   // ช่วงหลังกระทบที่ใช้ (วินาทีจริง)
+export function analyzeAuto(frames, imp, o = {}) {
+  const scales = o.scales || [1, 4, 8], out = [];
+  for (const s of scales) {
+    let last = -1e9; const fr = [];
+    for (const f of frames) { if (f.c < imp - 0.6 * s || f.c > imp + POST(s) * s) continue; const t = (f.c - imp) / s; if (t - last < 1 / 130) continue; last = t; fr.push({ g: f.g, W: f.W, H: f.H, t }); }
+    const r = analyze(fr, o); r.slow = s; out.push(r);
+  }
+  const ok = out.filter(r => r.ok), q = r => (r.diag?.pm ?? 0.5) * 2 + Math.min(1, r.n / 25) - Math.min(1, r.rms / 4);
+  return ok.length ? ok.sort((a, b) => q(b) - q(a))[0] : out.find(r => r.why !== 'clip') || out[0];
 }
 
 // รูปทรงลูก (ถนัดขวา): ทิศออก + ความโค้ง → ชื่อเรียก

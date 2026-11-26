@@ -87,6 +87,8 @@ export function makeClip(seed, opt = {}) {
   const isTree = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (y >= treeTop[x] && y < vh) isTree[y * W + x] = 1;
   const nt2 = new Float32Array(4096); for (let k = 0; k < nt2.length; k++) nt2[k] = (r2() - 0.5) * 2 * leaves;
   let sx = 0, sy = 0;
+  // ลูกที่ลอยอยู่มักดูเป็นจุดเข้มตัดฟ้าสว่าง (ย้อนแสง/ฟ้าครึ้ม) แม้ตอนวางบนหญ้าจะเห็นเป็นสีขาว
+  const flyL = hard && light !== 'night' && r2() < (light === 'dusk' ? 0.3 : 0.55) ? U2(55, 150) : ballL;
   const frames = [];
   const disc = (img, x0, y0, rad, L, w = 1) => { // anti-aliased disc with lens blur (energy kept)
     const re = Math.sqrt(rad * rad + 0.36), a = w * (rad * rad) / (re * re), x1 = Math.floor(x0 - re - 1), x2 = Math.ceil(x0 + re + 1), y1 = Math.floor(y0 - re - 1), y2 = Math.ceil(y0 + re + 1);
@@ -116,7 +118,7 @@ export function makeClip(seed, opt = {}) {
     // ball: on the tee before impact, then flying (motion blur over the shutter time)
     const tr = tt + audioErr;   // true time since impact
     if (tr < 0 || kind === 'whiff') disc(img, bx, by, br, ballL);
-    else { const n = 8; for (let s = 0; s < n; s++) { const ts = Math.max(0, tr - shutter / 2 + shutter * (s + 0.5) / n), [u, v, z] = C.proj(posAt(fl, ts)); if (z > 0.3) disc(img, u, v, C.f * R / z, ballL, 1 / n * (n - s) / (n - s)); } }
+    else { const n = 8; for (let s = 0; s < n; s++) { const ts = Math.max(0, tr - shutter / 2 + shutter * (s + 0.5) / n), [u, v, z] = C.proj(posAt(fl, ts)); if (z > 0.3) disc(img, u, v, C.f * R / z, flyL, 1 / n * (n - s) / (n - s)); } }
     if (other && tr > other.t0) { const P = posAt(other.fl, tr - other.t0), [u, v, z] = C.proj([P[0] + other.o[0], P[1], P[2] + other.o[2]]); if (z > 0.5) disc(img, u, v, C.f * R / z, ballL * 0.95); }
     for (const b of birds) disc(img, b.x + b.vx * tt, b.y + b.vy * tt + Math.sin(tt * 30) * 1.5, b.s, b.L);
     if (walker) { const x0 = walker.x + walker.vx * tt; for (let y = Math.floor(walker.y - walker.h); y < walker.y; y++) for (let x = Math.floor(x0 - walker.h * 0.18); x < x0 + walker.h * 0.18; x++) if (x >= 0 && y >= 0 && x < W && y < H) img[y * W + x] = walker.L; }
@@ -133,7 +135,7 @@ export function makeClip(seed, opt = {}) {
   // ground truth (image path until landing, px)
   const path = []; for (let t = 0; t <= fl.time + 1e-9; t += 0.02) { const [u, v] = C.proj(posAt(fl, t)); path.push({ t: t - audioErr, x: u, y: v }); }
   return { frames, truth: { ball: { x: bx, y: by, r: br }, path, carry: fl.carry, side: fl.side, apex: fl.apex, time: fl.time, speed: shot.v0, launch: shot.la, dir: shot.dir, club: cl[0], kind, impact: -audioErr },
-    meta: { W, H, fps, light, noise, portrait, birds: birds.length, walker: !!walker, other: !!other, clouds: !!clouds, leaves: !!leaves, shake: !!shake, soft: !!soft, cam: { hc: C.hc, f: C.f / Math.max(W, H), dc: C.dc } } };
+    meta: { W, H, fps, light, noise, portrait, birds: birds.length, walker: !!walker, other: !!other, darkBall: flyL !== ballL, clouds: !!clouds, leaves: !!leaves, shake: !!shake, soft: !!soft, cam: { hc: C.hc, f: C.f / Math.max(W, H), dc: C.dc } } };
 }
 
 // compare a tracer result with the truth: mean image error along the whole flight (% of frame height), carry/side/apex errors
